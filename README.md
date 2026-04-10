@@ -25,26 +25,42 @@ pip install "avro-datagen[ui]"
 avro-datagen ui
 ```
 
-Opens a Streamlit dashboard at `localhost:8501` where you can browse schemas,
-edit them live, preview generated data, and download samples.
+Opens a Streamlit dashboard at `localhost:8501` with a bundled example schema.
+Browse schemas, edit them live, preview generated data, and download samples.
+
+The UI creates a `schemas/` folder in your working directory when you save a
+schema. Point `--schema-dir` at an existing folder to use your own schemas.
 
 ```bash
+avro-datagen ui --schema-dir ./my-schemas      # use your own schemas
 avro-datagen ui --port 3000                    # custom port
-avro-datagen ui --schema-dir ./my-schemas      # custom schema directory
 avro-datagen ui --kafka                        # enable Kafka producer section
 ```
 
 ## CLI
 
 ```bash
-# Generate 10 records (JSON lines)
-avro-datagen -s schemas/transaction.avsc
+# Create a schema file
+cat > order.avsc << 'EOF'
+{
+  "type": "record",
+  "name": "Order",
+  "fields": [
+    { "name": "id", "type": { "type": "string", "logicalType": "uuid" } },
+    { "name": "amount", "type": "double", "arg.properties": { "range": { "min": 5, "max": 500 } } },
+    { "name": "customer", "type": "string", "arg.properties": { "faker": "name" } }
+  ]
+}
+EOF
 
-# 1000 records, seeded for reproducibility
-avro-datagen -s schemas/transaction.avsc -c 1000 --seed 42
+# Generate 10 records
+avro-datagen -s order.avsc
 
-# Pretty-print 5 records
-avro-datagen -s schemas/transaction.avsc -c 5 --pretty
+# Pretty-print, seeded for reproducibility
+avro-datagen -s order.avsc -c 5 --seed 42 --pretty
+
+# Rate-limited, infinite
+avro-datagen -s order.avsc -c 0 --rate 10
 ```
 
 ## Library
@@ -52,11 +68,11 @@ avro-datagen -s schemas/transaction.avsc -c 5 --pretty
 ```python
 from avro_datagen import generate
 
-for record in generate("schemas/transaction.avsc", count=100):
+for record in generate("order.avsc", count=100):
     print(record)
 
 # Deterministic output
-records = list(generate("schemas/transaction.avsc", count=10, seed=42))
+records = list(generate("order.avsc", count=10, seed=42))
 ```
 
 ## Development
@@ -72,6 +88,7 @@ With [uv](https://docs.astral.sh/uv/) (recommended):
 uv sync --all-extras
 
 make test       # run tests
+make check      # lint + typecheck + tests
 make app        # streamlit UI
 make docs       # mkdocs dev server
 ```
@@ -80,7 +97,7 @@ With pip:
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip3 install -e ".[dev]"
+pip3 install -e ".[dev,ui]"
 make test
 ```
 

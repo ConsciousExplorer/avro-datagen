@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-04-10
+
+### Changed
+
+- UI layout switched to wide mode with side-by-side schema and sample preview across all tabs
+- Editor tab: save filename is now editable for renaming schemas on save/download
+- Local schemas and upload tabs: schema JSON and sample record shown in two columns
+
 ## [0.2.0] - 2026-04-10
 
 ### Added
@@ -76,6 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for all Avro primitives, logical types (uuid, timestamp-millis, iso-timestamp, date), records, arrays, maps, enums, unions, fixed
 - MkDocs documentation site with API reference auto-generated from docstrings
 
+[0.2.1]: https://github.com/ConsciousExplorer/avro-datagen/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/ConsciousExplorer/avro-datagen/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/ConsciousExplorer/avro-datagen/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ConsciousExplorer/avro-datagen/releases/tag/v0.1.0

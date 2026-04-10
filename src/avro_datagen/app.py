@@ -34,7 +34,7 @@ else:
 st.set_page_config(
     page_title="Data Generator",
     page_icon=":material/database:",
-    layout="centered",
+    layout="wide",
     initial_sidebar_state="expanded" if KAFKA_ENABLED else "collapsed",
 )
 
@@ -97,8 +97,8 @@ _init_state()
 
 
 # ── Header ───────────────────────────────────────────────────────────
-st.title("Data Generator")
-st.caption("Schema-driven fake data to Kafka")
+st.title("📝 Data Generator")
+st.caption("Generate data from Avro schemas, with optional Kafka integration.")
 
 
 # ── Sidebar: Kafka connection (only when --kafka) ──────────────────
@@ -208,10 +208,11 @@ with tab_local:
         with open(selected) as f:
             schema_dict = json.load(f)
 
-        with st.expander("Schema JSON"):
+        col_schema, col_sample = st.columns(2, gap="large")
+        with col_schema, st.expander("Schema JSON", expanded=False):
             st.json(schema_dict)
-
-        _show_sample(schema_dict)
+        with col_sample:
+            _show_sample(schema_dict)
 
 # ── Tab 2: Upload ────────────────────────────────────────────────────
 with tab_upload:
@@ -225,10 +226,11 @@ with tab_upload:
         schema_dict = upload_dict
         schema_path = _schema_to_tmp(upload_dict)
 
-        with st.expander("Schema JSON"):
+        col_schema, col_sample = st.columns(2, gap="large")
+        with col_schema, st.expander("Schema JSON", expanded=False):
             st.json(upload_dict)
-
-        _show_sample(upload_dict)
+        with col_sample:
+            _show_sample(upload_dict)
 
 # ── Tab 3: Interactive editor ────────────────────────────────────────
 with tab_editor:
@@ -237,56 +239,88 @@ with tab_editor:
         source_key = str(schema_path)
         if st.session_state.get("_editor_source") != source_key:
             st.session_state._editor_source = source_key
-            # Write directly to the widget key so Streamlit picks it up
             st.session_state.schema_editor = json.dumps(schema_dict, indent=2)
+            # Default filename from the loaded schema
+            if schema_path and hasattr(schema_path, "name"):
+                st.session_state.save_filename = schema_path.name
+            else:
+                st.session_state.save_filename = schema_dict.get("name", "custom").lower() + ".avsc"
 
     default_text = '{\n  "type": "record",\n  "name": "Example",\n  "fields": []\n}'
 
-    schema_text = st.text_area(
-        "Schema JSON",
-        value=default_text,
-        height=400,
-        key="schema_editor",
-    )
+    col_edit, col_preview = st.columns(2, gap="large")
 
-    # Parse and validate first so buttons know if schema is valid
+    with col_edit:
+        st.caption("Schema JSON")
+        schema_text = st.text_area(
+            "Schema JSON",
+            value=default_text,
+            height=500,
+            key="schema_editor",
+            label_visibility="collapsed",
+        )
+
+    # Parse and validate
     editor_valid = False
+    parsed = None
     try:
         parsed = json.loads(schema_text)
         if "fields" not in parsed or "type" not in parsed:
-            st.warning("Valid JSON but not an Avro record schema (missing `type` or `fields`).")
+            with col_preview:
+                st.warning("Valid JSON but not an Avro record schema.")
         else:
             editor_valid = True
             edited_schema = parsed
     except json.JSONDecodeError as e:
-        st.error(f"Invalid JSON: {e}")
+        with col_preview:
+            st.error(f"Invalid JSON: {e}")
     except Exception as e:
-        st.error(f"Schema error: {e}")
+        with col_preview:
+            st.error(f"Schema error: {e}")
 
-    # Action buttons
-    col_save, col_download, col_reset, _ = st.columns([1, 1, 1, 1])
+    # Right column: live sample preview
+    with col_preview:
+        if editor_valid and parsed:
+            field_count = len(parsed.get("fields", []))
+            st.caption(f"`{parsed.get('name', 'unknown')}` -- {field_count} fields")
+            _show_sample(parsed)
+
+    # File name + action buttons
+    col_name, col_save, col_download, col_reset = st.columns([2, 1, 1, 1])
+    with col_name:
+        default_fn = st.session_state.get("save_filename", "schema.avsc")
+        save_filename = st.text_input(
+            "Filename",
+            value=default_fn,
+            label_visibility="collapsed",
+            placeholder="filename.avsc",
+        )
     with col_save:
-        can_save = editor_valid and schema_path and SCHEMA_DIR.is_dir()
         if st.button(
-            "Save to file", use_container_width=True, type="primary", disabled=not can_save
+            "Save to file",
+            use_container_width=True,
+            type="primary",
+            disabled=not editor_valid,
         ):
-            # Pretty-print before saving
+            fn = save_filename.strip() or "schema.avsc"
+            if not fn.endswith(".avsc"):
+                fn += ".avsc"
+            SCHEMA_DIR.mkdir(parents=True, exist_ok=True)
+            save_path = SCHEMA_DIR / fn
             formatted = json.dumps(parsed, indent=2) + "\n"
-            # Save to the original path if it's a local schema, otherwise into schemas/
-            save_path = schema_path
-            if not str(save_path).startswith(str(SCHEMA_DIR)):
-                name = parsed.get("name", "custom").lower() + ".avsc"
-                save_path = SCHEMA_DIR / name
             with open(save_path, "w") as f:
                 f.write(formatted)
-            st.toast(f"Saved to `{save_path.name}`", icon=":material/save:")
+            st.session_state.save_filename = fn
+            st.toast(f"Saved to `{SCHEMA_DIR / fn}`", icon=":material/save:")
     with col_download:
-        if editor_valid:
-            name = parsed.get("name", "schema").lower() + ".avsc"
+        if editor_valid and parsed:
+            fn = save_filename.strip() or "schema.avsc"
+            if not fn.endswith(".avsc"):
+                fn += ".avsc"
             st.download_button(
                 "Download",
                 data=json.dumps(parsed, indent=2),
-                file_name=name,
+                file_name=fn,
                 mime="application/json",
                 use_container_width=True,
             )
@@ -294,12 +328,6 @@ with tab_editor:
         if schema_dict and st.button("Reset", use_container_width=True):
             st.session_state.schema_editor = json.dumps(schema_dict, indent=2)
             st.rerun()
-
-    # Render sample
-    if editor_valid:
-        field_count = len(parsed.get("fields", []))
-        st.caption(f"`{parsed.get('name', 'unknown')}` -- {field_count} fields")
-        _show_sample(parsed)
 
 st.divider()
 

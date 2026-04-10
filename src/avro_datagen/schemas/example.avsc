@@ -1,16 +1,24 @@
 {
   "type": "record",
-  "name": "Order",
+  "name": "Order2",
   "namespace": "example",
   "fields": [
     {
       "name": "id",
-      "type": { "type": "string", "logicalType": "uuid" }
+      "type": {
+        "type": "string",
+        "logicalType": "uuid"
+      }
     },
     {
       "name": "customerId",
-      "type": { "type": "string", "logicalType": "uuid" },
-      "arg.properties": { "pool": 20 }
+      "type": {
+        "type": "string",
+        "logicalType": "uuid"
+      },
+      "arg.properties": {
+        "pool": 20
+      }
     },
     {
       "name": "status",
@@ -22,7 +30,12 @@
     {
       "name": "amount",
       "type": "double",
-      "arg.properties": { "range": { "min": 5.0, "max": 500.0 } }
+      "arg.properties": {
+        "range": {
+          "min": 5.0,
+          "max": 500.0
+        }
+      }
     },
     {
       "name": "currency",
@@ -31,8 +44,16 @@
     },
     {
       "name": "createdAt",
-      "type": { "type": "long", "logicalType": "timestamp-millis" },
-      "arg.properties": { "range": { "min": "-7d", "max": "now" } }
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "arg.properties": {
+        "range": {
+          "min": "-7d",
+          "max": "now"
+        }
+      }
     }
   ]
 }
