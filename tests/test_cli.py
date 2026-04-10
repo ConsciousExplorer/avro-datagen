@@ -8,8 +8,8 @@ import pytest
 
 from avro_datagen.cli import main
 
-SCHEMAS_DIR = Path(__file__).resolve().parent.parent / "schemas"
-TXN_SCHEMA = str(SCHEMAS_DIR / "transaction.avsc")
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+TXN_SCHEMA = str(FIXTURES_DIR / "transaction.avsc")
 
 
 class TestCLI:
@@ -69,4 +69,4 @@ class TestCLI:
 
     def test_schema_required(self):
         with pytest.raises(SystemExit):
-            main([])
+            main(["generate"])

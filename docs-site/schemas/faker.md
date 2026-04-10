@@ -4,16 +4,7 @@ The generator supports [Faker](https://faker.readthedocs.io/) providers via the
 `faker` hint in `arg.properties`. This gives you access to hundreds of realistic
 data generators for names, emails, addresses, phone numbers, and more.
 
-## Installation
-
-Faker is an optional dependency:
-
-```bash
-pip install avro-datagen[faker]
-```
-
-The generator works without Faker installed -- a `RuntimeError` is raised only
-if a schema uses the `faker` hint and the package is missing.
+Faker is included as a core dependency -- no extra install needed.
 
 ## Simple usage
 

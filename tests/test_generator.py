@@ -6,8 +6,8 @@ import pytest
 
 from avro_datagen.generator import generate
 
-SCHEMAS_DIR = Path(__file__).resolve().parent.parent / "schemas"
-TXN_SCHEMA = SCHEMAS_DIR / "transaction.avsc"
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+TXN_SCHEMA = FIXTURES_DIR / "transaction.avsc"
 
 
 class TestGenerate:

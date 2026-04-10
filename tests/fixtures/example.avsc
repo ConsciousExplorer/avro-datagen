@@ -1,0 +1,38 @@
+{
+  "type": "record",
+  "name": "Order",
+  "namespace": "example",
+  "fields": [
+    {
+      "name": "id",
+      "type": { "type": "string", "logicalType": "uuid" }
+    },
+    {
+      "name": "customerId",
+      "type": { "type": "string", "logicalType": "uuid" },
+      "arg.properties": { "pool": 20 }
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "arg.properties": {
+        "options": ["pending", "confirmed", "shipped", "delivered"]
+      }
+    },
+    {
+      "name": "amount",
+      "type": "double",
+      "arg.properties": { "range": { "min": 5.0, "max": 500.0 } }
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "default": "USD"
+    },
+    {
+      "name": "createdAt",
+      "type": { "type": "long", "logicalType": "timestamp-millis" },
+      "arg.properties": { "range": { "min": "-7d", "max": "now" } }
+    }
+  ]
+}

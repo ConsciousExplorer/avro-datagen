@@ -17,7 +17,7 @@ typecheck:
 check: lint typecheck test
 
 app:
-	$(RUN) streamlit run app.py
+	$(RUN) avro-datagen ui
 
 docs:
 	$(RUN) mkdocs serve

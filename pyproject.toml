@@ -1,11 +1,11 @@
 [project]
 name = "avro-datagen"
-version = "0.1.1"
+version = "0.2.0"
 description = "Schema-driven fake data generator for Avro schemas with arg.properties hints"
 authors = [
     {name = "Edwin Stoltz", email = "edwinstoltz.es@gmail.com"},
 ]
-dependencies = []
+dependencies = ["faker>=37.0.0"]
 requires-python = ">=3.13"
 readme = "README.md"
 license = {text = "MIT"}
@@ -32,9 +32,8 @@ avro_datagen = "avro_datagen.cli:main"
 
 [project.optional-dependencies]
 kafka = ["confluent-kafka>=2.8.0"]
-faker = ["faker>=37.0.0"]
 ui = ["streamlit>=1.45.0", "python-dotenv>=1.1.0"]
-app = ["avro-datagen[kafka,faker,ui]"]
+app = ["avro-datagen[kafka,ui]"]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=7.1.0",
@@ -87,4 +86,4 @@ known-first-party = ["avro_datagen"]
 pythonVersion = "3.13"
 typeCheckingMode = "standard"
 include = ["src"]
-exclude = ["tests", "src/avro_datagen/producer.py"]
+exclude = ["tests", "src/avro_datagen/producer.py", "src/avro_datagen/app.py"]

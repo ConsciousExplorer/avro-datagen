@@ -13,19 +13,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from faker import Faker
+
 # Avro type can be a primitive string ("string", "int"), a complex dict
 # ({"type": "string", "logicalType": "uuid"}), or a union list (["null", "string"]).
 type AvroType = str | dict[str, Any] | list[Any]
 
-try:
-    from faker import Faker
-
-    _faker: Any = Faker()
-    _has_faker = True
-except ImportError:
-    Faker = None  # type: ignore[assignment,misc]
-    _faker = None
-    _has_faker = False
+_faker = Faker()
 
 
 def load_schema(path: str | Path) -> dict:
@@ -152,11 +146,6 @@ class RecordResolver:
                        {"method": "random_int", "kwargs": {"min": 1, "max": 100}}
                        {"method": "name", "locale": "ja_JP"}
         """
-        if not _has_faker:
-            raise RuntimeError(
-                "faker hint requires the faker package — install with: pip install faker"
-            )
-
         if isinstance(spec, str):
             method_name = spec
             args = []
@@ -168,7 +157,7 @@ class RecordResolver:
             kwargs = spec.get("kwargs", {})
             locale = spec.get("locale")
 
-        provider = Faker(locale) if locale else _faker  # pyright: ignore[reportOptionalCall]
+        provider = Faker(locale) if locale else _faker
 
         method = getattr(provider, method_name, None)
         if method is None:

@@ -7,28 +7,38 @@
 [![Docs](https://img.shields.io/badge/docs-mkdocs-teal)](https://consciousexplorer.github.io/avro-datagen/)
 
 Schema-driven fake data generator for Avro schemas. Reads `.avsc` files with
-`arg.properties` hints and produces realistic records -- zero runtime
-dependencies (stdlib only).
+`arg.properties` hints and produces realistic records. Includes
+[Faker](https://faker.readthedocs.io/) for names, emails, addresses, and more.
 
 ## Install
 
 ```bash
-pip install avro-datagen
+pip install avro-datagen                 # CLI + library + Faker
+pip install "avro-datagen[ui]"           # + Streamlit web UI
+pip install "avro-datagen[app]"          # + UI + Kafka producer
 ```
 
-With optional extras:
+## Web UI
 
 ```bash
-pip install avro-datagen[kafka]   # Kafka producer support
-pip install avro-datagen[faker]   # Faker-powered generation
-pip install avro-datagen[app]     # Streamlit UI + Kafka + Faker
+pip install "avro-datagen[ui]"
+avro-datagen ui
+```
+
+Opens a Streamlit dashboard at `localhost:8501` where you can browse schemas,
+edit them live, preview generated data, and download samples.
+
+```bash
+avro-datagen ui --port 3000                    # custom port
+avro-datagen ui --schema-dir ./my-schemas      # custom schema directory
+avro-datagen ui --kafka                        # enable Kafka producer section
 ```
 
 ## CLI
 
 ```bash
 # Generate 10 records (JSON lines)
-avro-datagen --schema schemas/transaction.avsc
+avro-datagen -s schemas/transaction.avsc
 
 # 1000 records, seeded for reproducibility
 avro-datagen -s schemas/transaction.avsc -c 1000 --seed 42
@@ -70,7 +80,7 @@ With pip:
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip3 install -e ".[dev,faker]"
+pip3 install -e ".[dev]"
 make test
 ```
 
