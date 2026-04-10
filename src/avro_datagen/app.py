@@ -97,6 +97,14 @@ def _init_state():
         "preview_records": [],
         "log_lines": [],
         "stop_requested": False,
+        "_stop_event": threading.Event(),
+        "_thread_state": {
+            "produced_count": 0,
+            "error_count": 0,
+            "elapsed_s": 0.0,
+            "log_lines": [],
+            "producing": False,
+        },
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -467,6 +475,12 @@ if KAFKA_ENABLED:
         target_label += f" -- {security_protocol}"
     st.caption(f"Target: {target_label}")
 
+    # Grab thread-safe shared objects from session state.
+    # These persist across Streamlit reruns so the background thread
+    # and the main thread always reference the same objects.
+    _stop_event: threading.Event = st.session_state._stop_event
+    _thread_state: dict = st.session_state._thread_state
+
     def _run_producer():
         """Background thread that produces to Kafka."""
         produce_schema = edited_schema or schema_dict
@@ -484,11 +498,11 @@ if KAFKA_ENABLED:
             compression_type=compression,
         )
 
-        effective_count = count if not st.session_state.stop_requested else 0
+        effective_count = count if not _stop_event.is_set() else 0
 
         def _on_progress(i, record):
-            st.session_state.produced_count = i + 1
-            if st.session_state.stop_requested:
+            _thread_state["produced_count"] = i + 1
+            if _stop_event.is_set():
                 raise KeyboardInterrupt
 
         try:
@@ -501,16 +515,26 @@ if KAFKA_ENABLED:
                 seed=effective_seed,
                 on_progress=_on_progress,
             )
-            st.session_state.error_count = result["errors"]
-            st.session_state.elapsed_s = result["elapsed_s"]
-            st.session_state.log_lines.append(
+            _thread_state["error_count"] = result["errors"]
+            _thread_state["elapsed_s"] = result["elapsed_s"]
+            _thread_state["log_lines"].append(
                 f"Done -- {result['produced']} produced, "
                 f"{result['errors']} errors, {result['elapsed_s']:.1f}s"
             )
         except Exception as e:
-            st.session_state.log_lines.append(f"Error: {e}")
+            _thread_state["log_lines"].append(f"Error: {e}")
         finally:
-            st.session_state.producing = False
+            _thread_state["producing"] = False
+
+    # ── Sync thread state back into session state ────────────────────
+    # Must run before buttons so they see the up-to-date producing flag.
+    st.session_state.produced_count = _thread_state["produced_count"]
+    st.session_state.error_count = _thread_state["error_count"]
+    st.session_state.elapsed_s = _thread_state["elapsed_s"]
+    if _thread_state["log_lines"]:
+        st.session_state.log_lines = list(_thread_state["log_lines"])
+    if not _thread_state["producing"]:
+        st.session_state.producing = False
 
     col_produce, col_stop = st.columns(2)
 
@@ -528,6 +552,8 @@ if KAFKA_ENABLED:
             st.session_state.elapsed_s = 0.0
             st.session_state.stop_requested = False
             st.session_state.log_lines = []
+            _stop_event.clear()
+            _thread_state.update(produced_count=0, error_count=0, elapsed_s=0.0, producing=True, log_lines=[])
             thread = threading.Thread(target=_run_producer, daemon=True)
             thread.start()
             st.rerun()
@@ -538,6 +564,7 @@ if KAFKA_ENABLED:
             disabled=not st.session_state.producing,
             use_container_width=True,
         ):
+            _stop_event.set()
             st.session_state.stop_requested = True
             st.rerun()
 
@@ -557,4 +584,9 @@ if KAFKA_ENABLED:
 
     if st.session_state.log_lines:
         for line in st.session_state.log_lines:
-            st.success(line, icon=":material/check_circle:")
+            if line.startswith("Error:"):
+                st.error(line, icon=":material/error:")
+            elif st.session_state.error_count > 0:
+                st.warning(line, icon=":material/warning:")
+            else:
+                st.success(line, icon=":material/check_circle:")

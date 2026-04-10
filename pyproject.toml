@@ -1,6 +1,6 @@
 [project]
 name = "avro-datagen"
-version = "0.2.4"
+version = "0.2.5"
 description = "Schema-driven fake data generator for Avro schemas with arg.properties hints"
 authors = [
     {name = "Edwin Stoltz", email = "edwinstoltz.es@gmail.com"},

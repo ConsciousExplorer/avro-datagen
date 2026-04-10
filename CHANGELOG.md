@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2026-04-10
+
+### Fixed
+
+- Kafka producer thread no longer crashes with `AttributeError` on `st.session_state` — thread-safe `threading.Event` and shared dict replace direct session state access from background threads
+- "Produce to Kafka" button now re-enables after a produce run completes — sync step moved before button rendering so the disabled state reflects the current producing flag
+- Producer log messages now show red for errors and yellow for partial failures instead of always green
+
 ## [0.2.4] - 2026-04-10
 
 ### Changed

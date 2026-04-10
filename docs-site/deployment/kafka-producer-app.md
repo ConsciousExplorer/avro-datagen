@@ -97,11 +97,20 @@ for record in generate(schema_path, count=0):
     time.sleep(1 / rate)  # throttle to target rate
 ```
 
+## Streamlit UI producer
+
+The Streamlit UI includes a built-in Kafka producer section. Launch with:
+
+```bash
+avro-datagen ui --kafka
+```
+
+The UI provides:
+- Sidebar configuration for bootstrap servers, topic, security protocol, SASL credentials, and producer tuning
+- A **Produce to Kafka** button with live metrics (sent, errors, elapsed time)
+- A **Stop** button to cancel a running produce
+- Color-coded result banners: green for success, red for errors (e.g. topic not found, connection refused), yellow for partial failures
+
 ## Current limitations
 
-- **No `--rate` flag yet.** The generator emits records as fast as possible.
-  A `--rate N` flag (records per second) is needed for realistic load
-  simulation. Without it, the generator will saturate the broker.
-- **No `produce` command yet.** The `confluent-kafka` dependency is declared
-  but no producer module exists. For now, use the pipe approach described
-  in [kafka-pipe.md](kafka-pipe.md).
+- **No standalone `produce` CLI command yet.** The producer is accessible via the Streamlit UI (`--kafka` flag) or programmatically via `avro_datagen.producer.produce()`. For now, use the pipe approach described in [kafka-pipe.md](kafka-pipe.md) if you need a CLI-only workflow.
