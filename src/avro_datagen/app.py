@@ -232,21 +232,50 @@ with tab_local:
 
 # ── Tab 2: Upload ────────────────────────────────────────────────────
 with tab_upload:
+
     uploaded = st.file_uploader(
         "Drop an `.avsc` or `.json` file",
         type=["avsc", "json"],
+        accept_multiple_files=False,
     )
     if uploaded:
         raw = uploaded.read().decode("utf-8")
         upload_dict = json.loads(raw)
         schema_dict = upload_dict
         schema_path = _schema_to_tmp(upload_dict)
+        default_fn = uploaded.name if hasattr(uploaded, "name") else "uploaded_schema.avsc"
+
+        # Filename + Upload button at the top (mirrors editor tab layout)
+        col_fn, col_upload_btn = st.columns([3, 1])
+        with col_fn:
+            save_filename_upload = st.text_input(
+                "Filename",
+                value=default_fn,
+                key="save_filename_upload",
+                label_visibility="collapsed",
+                placeholder="filename.avsc",
+            )
+        with col_upload_btn:
+            if st.button("Upload", use_container_width=True, type="primary", key="save_upload_btn"):
+                fn = save_filename_upload.strip() or "uploaded_schema.avsc"
+                if not fn.endswith(".avsc"):
+                    fn += ".avsc"
+                SAVE_DIR.mkdir(parents=True, exist_ok=True)
+                save_path = SAVE_DIR / fn
+                formatted = json.dumps(upload_dict, indent=2) + "\n"
+                with open(save_path, "w") as f:
+                    f.write(formatted)
+                st.session_state.save_filename_upload = fn
+                st.toast(f"Saved to `{save_path}`", icon=":material/save:")
 
         col_schema, col_sample = st.columns(2, gap="large")
         with col_schema, st.expander("Schema JSON", expanded=False):
             st.json(upload_dict)
         with col_sample:
             _show_sample(upload_dict)
+
+        # Set the editor's filename to the uploaded file's name for next tab
+        st.session_state.save_filename = default_fn
 
 # ── Tab 3: Interactive editor ────────────────────────────────────────
 with tab_editor:
@@ -256,14 +285,55 @@ with tab_editor:
         if st.session_state.get("_editor_source") != source_key:
             st.session_state._editor_source = source_key
             st.session_state.schema_editor = json.dumps(schema_dict, indent=2)
-            # Default filename from the loaded schema
-            if schema_path and hasattr(schema_path, "name"):
+            # Prefer uploaded filename if set in session, else fallback
+            if st.session_state.get("save_filename"):
+                pass  # already set by upload tab
+            elif schema_path and hasattr(schema_path, "name"):
                 st.session_state.save_filename = schema_path.name
             else:
                 st.session_state.save_filename = schema_dict.get("name", "custom").lower() + ".avsc"
 
     default_text = '{\n  "type": "record",\n  "name": "Example",\n  "fields": []\n}'
 
+    # Filename + action buttons at the top (full-width, matches other tabs)
+    col_fn, col_save, col_reset = st.columns([3, 1, 1])
+    default_fn = st.session_state.get("save_filename", "schema.avsc")
+    with col_fn:
+        save_filename = st.text_input(
+            "Filename",
+            value=default_fn,
+            label_visibility="collapsed",
+            placeholder="filename.avsc",
+        )
+    with col_save:
+        if st.button(
+            "Save to file",
+            use_container_width=True,
+            type="primary",
+            disabled=not st.session_state.get("schema_editor", ""),
+            key="save_editor_btn",
+        ):
+            try:
+                parsed = json.loads(st.session_state.schema_editor)
+                fn = save_filename.strip() or "schema.avsc"
+                if not fn.endswith(".avsc"):
+                    fn += ".avsc"
+                SAVE_DIR.mkdir(parents=True, exist_ok=True)
+                save_path = SAVE_DIR / fn
+                formatted = json.dumps(parsed, indent=2) + "\n"
+                with open(save_path, "w") as f:
+                    f.write(formatted)
+                st.session_state.save_filename = fn
+                st.toast(f"Saved to `{save_path}`", icon=":material/save:")
+            except Exception as e:
+                st.error(f"Could not save: {e}")
+    with col_reset:
+        if st.button("Reset", use_container_width=True, key="reset_editor_btn"):
+            if schema_dict:
+                st.session_state.schema_editor = json.dumps(schema_dict, indent=2)
+                st.rerun()
+
+    # Two columns below: editor on left, preview on right
     col_edit, col_preview = st.columns(2, gap="large")
 
     with col_edit:
@@ -280,7 +350,7 @@ with tab_editor:
     editor_valid = False
     parsed = None
     try:
-        parsed = json.loads(schema_text)
+        parsed = json.loads(st.session_state.schema_editor)
         if "fields" not in parsed or "type" not in parsed:
             with col_preview:
                 st.warning("Valid JSON but not an Avro record schema.")
@@ -294,56 +364,21 @@ with tab_editor:
         with col_preview:
             st.error(f"Schema error: {e}")
 
-    # Right column: live sample preview
     with col_preview:
         if editor_valid and parsed:
             field_count = len(parsed.get("fields", []))
             st.caption(f"`{parsed.get('name', 'unknown')}` -- {field_count} fields")
             _show_sample(parsed)
-
-    # File name + action buttons
-    col_name, col_save, col_download, col_reset = st.columns([2, 1, 1, 1])
-    with col_name:
-        default_fn = st.session_state.get("save_filename", "schema.avsc")
-        save_filename = st.text_input(
-            "Filename",
-            value=default_fn,
-            label_visibility="collapsed",
-            placeholder="filename.avsc",
-        )
-    with col_save:
-        if st.button(
-            "Save to file",
-            use_container_width=True,
-            type="primary",
-            disabled=not editor_valid,
-        ):
-            fn = save_filename.strip() or "schema.avsc"
-            if not fn.endswith(".avsc"):
-                fn += ".avsc"
-            SAVE_DIR.mkdir(parents=True, exist_ok=True)
-            save_path = SAVE_DIR / fn
-            formatted = json.dumps(parsed, indent=2) + "\n"
-            with open(save_path, "w") as f:
-                f.write(formatted)
-            st.session_state.save_filename = fn
-            st.toast(f"Saved to `{save_path}`", icon=":material/save:")
-    with col_download:
-        if editor_valid and parsed:
-            fn = save_filename.strip() or "schema.avsc"
-            if not fn.endswith(".avsc"):
-                fn += ".avsc"
+            fn_preview = save_filename.strip() if save_filename else "schema.avsc"
+            if not fn_preview.endswith(".avsc"):
+                fn_preview += ".avsc"
             st.download_button(
                 "Download",
                 data=json.dumps(parsed, indent=2),
-                file_name=fn,
+                file_name=fn_preview,
                 mime="application/json",
                 use_container_width=True,
             )
-    with col_reset:
-        if schema_dict and st.button("Reset", use_container_width=True):
-            st.session_state.schema_editor = json.dumps(schema_dict, indent=2)
-            st.rerun()
 
 st.divider()
 

@@ -1,6 +1,6 @@
 {
   "type": "record",
-  "name": "Order2",
+  "name": "Order",
   "namespace": "example",
   "fields": [
     {
