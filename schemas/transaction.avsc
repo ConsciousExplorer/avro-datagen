@@ -1,0 +1,318 @@
+{
+  "type": "record",
+  "name": "Transaction",
+  "namespace": "txn.raw.v1",
+  "fields": [
+    {
+      "name": "correlationId",
+      "type": { "type": "string", "logicalType": "uuid" }
+    },
+    {
+      "name": "sourceId",
+      "type": "string",
+      "arg.properties": {
+        "options": ["bank-api", "card-processor", "mobile-app"]
+      }
+    },
+    {
+      "name": "customerId",
+      "type": { "type": "string", "logicalType": "uuid" },
+      "arg.properties": { "pool": 50 }
+    },
+    {
+      "name": "category",
+      "type": "string",
+      "arg.properties": {
+        "options": [
+          "GROCERIES",
+          "GROCERIES",
+          "TRANSPORT",
+          "TRANSPORT",
+          "DINING",
+          "DINING",
+          "UTILITIES",
+          "ENTERTAINMENT",
+          "HEALTHCARE",
+          "RETAIL",
+          "RETAIL"
+        ]
+      }
+    },
+    {
+      "name": "merchantName",
+      "type": "string",
+      "arg.properties": {
+        "rules": [
+          {
+            "when": { "field": "category", "equals": "GROCERIES" },
+            "then": {
+              "options": [
+                "Pick n Pay",
+                "Checkers",
+                "Woolworths Food",
+                "Spar",
+                "Food Lover's Market",
+                "Shoprite"
+              ]
+            }
+          },
+          {
+            "when": { "field": "category", "equals": "TRANSPORT" },
+            "then": {
+              "options": [
+                "Uber SA",
+                "Bolt",
+                "Gautrain",
+                "Shell",
+                "Engen",
+                "BP",
+                "Caltex"
+              ]
+            }
+          },
+          {
+            "when": { "field": "category", "equals": "DINING" },
+            "then": {
+              "options": [
+                "Nando's",
+                "Spur",
+                "McDonald's",
+                "KFC",
+                "Ocean Basket",
+                "Steers",
+                "Wimpy"
+              ]
+            }
+          },
+          {
+            "when": { "field": "category", "equals": "UTILITIES" },
+            "then": {
+              "options": [
+                "Eskom",
+                "City of Cape Town",
+                "City Power",
+                "Vodacom",
+                "MTN",
+                "Telkom",
+                "Rain"
+              ]
+            }
+          },
+          {
+            "when": { "field": "category", "equals": "ENTERTAINMENT" },
+            "then": {
+              "options": [
+                "Ster-Kinekor",
+                "Nu Metro",
+                "Computicket",
+                "DStv",
+                "Netflix SA",
+                "Spotify",
+                "Takealot"
+              ]
+            }
+          },
+          {
+            "when": { "field": "category", "equals": "HEALTHCARE" },
+            "then": {
+              "options": [
+                "Dis-Chem",
+                "Clicks Pharmacy",
+                "Netcare",
+                "Mediclinic",
+                "Life Healthcare",
+                "Lancet Laboratories"
+              ]
+            }
+          },
+          {
+            "when": { "field": "category", "equals": "RETAIL" },
+            "then": {
+              "options": [
+                "Woolworths",
+                "Mr Price",
+                "Edgars",
+                "PEP",
+                "Ackermans",
+                "Truworths",
+                "Cotton On"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "mccCode",
+      "type": "string",
+      "arg.properties": {
+        "rules": [
+          {
+            "when": { "field": "category", "equals": "GROCERIES" },
+            "then": { "options": ["5411", "5422", "5441", "5451", "5462"] }
+          },
+          {
+            "when": { "field": "category", "equals": "TRANSPORT" },
+            "then": {
+              "options": [
+                "4011",
+                "4111",
+                "4121",
+                "4131",
+                "4784",
+                "5541",
+                "5542"
+              ]
+            }
+          },
+          {
+            "when": { "field": "category", "equals": "DINING" },
+            "then": { "options": ["5812", "5813", "5814"] }
+          },
+          {
+            "when": { "field": "category", "equals": "UTILITIES" },
+            "then": {
+              "options": ["4812", "4813", "4814", "4815", "4816", "4900"]
+            }
+          },
+          {
+            "when": { "field": "category", "equals": "ENTERTAINMENT" },
+            "then": {
+              "options": ["7832", "7841", "7911", "7922", "7929", "7941"]
+            }
+          },
+          {
+            "when": { "field": "category", "equals": "HEALTHCARE" },
+            "then": {
+              "options": ["5912", "8011", "8021", "8031", "8041", "8042"]
+            }
+          },
+          {
+            "when": { "field": "category", "equals": "RETAIL" },
+            "then": {
+              "options": [
+                "5311",
+                "5331",
+                "5399",
+                "5611",
+                "5621",
+                "5651",
+                "5691"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "amount",
+      "type": "double",
+      "arg.properties": {
+        "rules": [
+          {
+            "when": { "field": "category", "equals": "GROCERIES" },
+            "then": { "range": { "min": 35.0, "max": 4500.0 } }
+          },
+          {
+            "when": { "field": "category", "equals": "TRANSPORT" },
+            "then": { "range": { "min": 15.0, "max": 2500.0 } }
+          },
+          {
+            "when": { "field": "category", "equals": "DINING" },
+            "then": { "range": { "min": 25.0, "max": 1200.0 } }
+          },
+          {
+            "when": { "field": "category", "equals": "UTILITIES" },
+            "then": { "range": { "min": 50.0, "max": 5000.0 } }
+          },
+          {
+            "when": { "field": "category", "equals": "ENTERTAINMENT" },
+            "then": { "range": { "min": 29.0, "max": 1500.0 } }
+          },
+          {
+            "when": { "field": "category", "equals": "HEALTHCARE" },
+            "then": { "range": { "min": 80.0, "max": 15000.0 } }
+          },
+          {
+            "when": { "field": "category", "equals": "RETAIL" },
+            "then": { "range": { "min": 20.0, "max": 8000.0 } }
+          }
+        ]
+      }
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "default": "ZAR"
+    },
+    {
+      "name": "transactionType",
+      "type": "string",
+      "arg.properties": {
+        "options": [
+          "debit",
+          "debit",
+          "debit",
+          "debit",
+          "debit",
+          "debit",
+          "credit"
+        ]
+      }
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "arg.properties": {
+        "rules": [
+          {
+            "when": { "field": "transactionType", "equals": "credit" },
+            "then": { "template": "Refund from {merchantName}" }
+          },
+          {
+            "when": { "field": "transactionType", "equals": "debit" },
+            "then": { "template": "Purchase at {merchantName}" }
+          }
+        ]
+      }
+    },
+    {
+      "name": "refundReason",
+      "type": ["null", "string"],
+      "arg.properties": {
+        "rules": [
+          {
+            "when": { "field": "transactionType", "equals": "credit" },
+            "then": {
+              "options": [
+                "damaged goods",
+                "overcharged",
+                "wrong item",
+                "duplicate charge",
+                "service not rendered"
+              ]
+            }
+          },
+          {
+            "when": { "field": "transactionType", "equals": "debit" },
+            "then": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "timestamp",
+      "type": { "type": "long", "logicalType": "timestamp-millis" },
+      "arg.properties": { "range": { "min": "-30d", "max": "now" } }
+    },
+    {
+      "name": "createdAt",
+      "type": { "type": "string", "logicalType": "iso-timestamp" },
+      "arg.properties": { "ref": "timestamp" }
+    },
+    {
+      "name": "updatedAt",
+      "type": { "type": "string", "logicalType": "iso-timestamp" }
+    }
+  ]
+}
