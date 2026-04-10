@@ -39,7 +39,8 @@ st.set_page_config(
 )
 
 # ── Styling ──────────────────────────────────────────────────────────
-st.markdown("""
+st.markdown(
+    """
 <style>
     .block-container { padding-top: 2rem; }
     #MainMenu, footer, .stDeployButton { display: none; }
@@ -71,7 +72,9 @@ st.markdown("""
     /* Divider */
     hr { border-color: #e2e8f0 !important; }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 
 # ── Session state defaults ───────────────────────────────────────────
@@ -142,13 +145,19 @@ if KAFKA_ENABLED:
 
         acks = st.selectbox("Acks", ["all", "0", "1"], index=0)
         linger_ms = st.number_input(
-            "Linger (ms)", value=int(os.getenv("KAFKA_LINGER_MS", "5")), min_value=0,
+            "Linger (ms)",
+            value=int(os.getenv("KAFKA_LINGER_MS", "5")),
+            min_value=0,
         )
         batch_size = st.number_input(
-            "Batch size", value=int(os.getenv("KAFKA_BATCH_SIZE", "16384")), min_value=1,
+            "Batch size",
+            value=int(os.getenv("KAFKA_BATCH_SIZE", "16384")),
+            min_value=1,
         )
         compression = st.selectbox(
-            "Compression", ["none", "gzip", "snappy", "lz4", "zstd"], index=2,
+            "Compression",
+            ["none", "gzip", "snappy", "lz4", "zstd"],
+            index=2,
         )
 
 
@@ -303,17 +312,26 @@ col_count, col_rate, col_seed = st.columns(3)
 
 with col_count:
     count = st.number_input(
-        "Records", value=100, min_value=0, step=10,
+        "Records",
+        value=100,
+        min_value=0,
+        step=10,
         help="0 = infinite (use Stop button)",
     )
 with col_rate:
     rate = st.number_input(
-        "Rate (rec/s)", value=0.0, min_value=0.0, step=1.0,
+        "Rate (rec/s)",
+        value=0.0,
+        min_value=0.0,
+        step=1.0,
         help="0 = no limit",
     )
 with col_seed:
     seed = st.number_input(
-        "Seed", value=0, min_value=0, step=1,
+        "Seed",
+        value=0,
+        min_value=0,
+        step=1,
         help="0 = random each run",
     )
 

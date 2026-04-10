@@ -104,8 +104,7 @@ def _run_ui(opts: argparse.Namespace) -> None:
         import streamlit  # noqa: F401
     except ImportError:
         print(
-            "Streamlit is not installed. Install with:\n"
-            '  pip install "avro-datagen[app]"',
+            'Streamlit is not installed. Install with:\n  pip install "avro-datagen[app]"',
             file=sys.stderr,
         )
         sys.exit(1)
