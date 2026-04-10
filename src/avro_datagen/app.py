@@ -232,7 +232,6 @@ with tab_local:
 
 # ── Tab 2: Upload ────────────────────────────────────────────────────
 with tab_upload:
-
     uploaded = st.file_uploader(
         "Drop an `.avsc` or `.json` file",
         type=["avsc", "json"],
@@ -328,10 +327,9 @@ with tab_editor:
             except Exception as e:
                 st.error(f"Could not save: {e}")
     with col_reset:
-        if st.button("Reset", use_container_width=True, key="reset_editor_btn"):
-            if schema_dict:
-                st.session_state.schema_editor = json.dumps(schema_dict, indent=2)
-                st.rerun()
+        if st.button("Reset", use_container_width=True, key="reset_editor_btn") and schema_dict:
+            st.session_state.schema_editor = json.dumps(schema_dict, indent=2)
+            st.rerun()
 
     # Two columns below: editor on left, preview on right
     col_edit, col_preview = st.columns(2, gap="large")
