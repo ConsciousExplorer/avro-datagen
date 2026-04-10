@@ -553,7 +553,9 @@ if KAFKA_ENABLED:
             st.session_state.stop_requested = False
             st.session_state.log_lines = []
             _stop_event.clear()
-            _thread_state.update(produced_count=0, error_count=0, elapsed_s=0.0, producing=True, log_lines=[])
+            _thread_state.update(
+                produced_count=0, error_count=0, elapsed_s=0.0, producing=True, log_lines=[]
+            )
             thread = threading.Thread(target=_run_producer, daemon=True)
             thread.start()
             st.rerun()
