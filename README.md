@@ -1,6 +1,6 @@
 # avro-datagen
 
-[![CI](https://github.com/ConsciousExplorer/avro-datagen/actions/workflows/ci.yml/badge.svg)](https://github.com/ConsciousExplorer/avro-datagen/actions/workflows/ci.yml)
+[![CI](https://github.com/ConsciousExplorer/avro-datagen/actions/workflows/publish.yml/badge.svg)](https://github.com/ConsciousExplorer/avro-datagen/actions/workflows/publish.yml)
 [![PyPI version](https://img.shields.io/pypi/v/avro-datagen)](https://pypi.org/project/avro-datagen/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
