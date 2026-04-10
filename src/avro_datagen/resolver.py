@@ -408,6 +408,10 @@ class RecordResolver:
         """Extract the logicalType from a type object, if present."""
         if isinstance(avro_type, dict):
             return avro_type.get("logicalType")
+        if isinstance(avro_type, list):
+            for branch in avro_type:
+                if isinstance(branch, dict) and "logicalType" in branch:
+                    return branch["logicalType"]
         return None
 
     def _get_base_type(self, avro_type: AvroType) -> str | None:
@@ -416,6 +420,12 @@ class RecordResolver:
             return avro_type
         if isinstance(avro_type, dict):
             return avro_type.get("type")
+        if isinstance(avro_type, list):
+            for branch in avro_type:
+                if isinstance(branch, dict):
+                    return branch.get("type")
+                if isinstance(branch, str) and branch != "null":
+                    return branch
         return None
 
     def _parse_time_offset(self, value: str | int | float) -> float:

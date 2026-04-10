@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-04-10
+
+### Changed
+
+- Enriched bundled sample schema with `faker`, `pattern`, `template`, and `rules` examples
+
+### Fixed
+
+- Union types (e.g. `["null", {"type": "long", "logicalType": "timestamp-millis"}]`) now resolve correctly in `range` and other hints — `_get_logical_type` and `_get_base_type` look inside union branches for the non-null type
+
 ## [0.2.3] - 2026-04-10
 
 ### Changed
@@ -98,6 +108,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for all Avro primitives, logical types (uuid, timestamp-millis, iso-timestamp, date), records, arrays, maps, enums, unions, fixed
 - MkDocs documentation site with API reference auto-generated from docstrings
 
+[0.2.4]: https://github.com/ConsciousExplorer/avro-datagen/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/ConsciousExplorer/avro-datagen/compare/v0.2.1...v0.2.3
 [0.2.1]: https://github.com/ConsciousExplorer/avro-datagen/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/ConsciousExplorer/avro-datagen/compare/v0.1.1...v0.2.0
