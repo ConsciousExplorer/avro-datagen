@@ -1,4 +1,4 @@
-# avro-datagen
+# 📝 avro-datagen
 
 Schema-driven fake data generator for Avro schemas. Reads `.avsc` files
 with `arg.properties` hints and produces realistic records -- no code changes

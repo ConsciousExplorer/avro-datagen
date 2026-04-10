@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Editor tab: save filename is now editable for renaming schemas on save/download
 - Local schemas and upload tabs: schema JSON and sample record shown in two columns
 
+### Fixed
+
+- Save button now writes to `./schemas/` in the working directory, not inside the installed package
+- Save creates the `schemas/` folder automatically if it doesn't exist
+
 ## [0.2.0] - 2026-04-10
 
 ### Added

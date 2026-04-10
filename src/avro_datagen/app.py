@@ -21,14 +21,24 @@ KAFKA_ENABLED = os.getenv("AVRO_DATAGEN_KAFKA", "0") == "1"
 _PKG_DIR = Path(__file__).parent
 _BUNDLED_SCHEMAS = _PKG_DIR / "schemas"
 
-# Use env var if set, then local ./schemas, then bundled package schemas
-_schema_env = os.getenv("SCHEMA_DIR")
-if _schema_env:
-    SCHEMA_DIR = Path(_schema_env)
-elif Path("schemas").is_dir():
-    SCHEMA_DIR = Path("schemas")
-else:
-    SCHEMA_DIR = _BUNDLED_SCHEMAS
+# Save directory is always in the working directory, never inside the package
+SAVE_DIR = Path(os.getenv("SCHEMA_DIR", "schemas"))
+
+
+def _get_schema_dir() -> Path:
+    """Resolve schema directory dynamically on each run.
+
+    Checks: env var → local ./schemas/ → bundled package schemas.
+    Re-evaluated on every Streamlit rerun so saving a schema to ./schemas/
+    switches the UI away from bundled examples automatically.
+    """
+    env = os.getenv("SCHEMA_DIR")
+    if env:
+        return Path(env)
+    if Path("schemas").is_dir():
+        return Path("schemas")
+    return _BUNDLED_SCHEMAS
+
 
 # ── Page config ──────────────────────────────────────────────────────
 st.set_page_config(
@@ -97,8 +107,13 @@ _init_state()
 
 
 # ── Header ───────────────────────────────────────────────────────────
-st.title("📝 Data Generator")
-st.caption("Generate data from Avro schemas, with optional Kafka integration.")
+st.title("📝 avro-datagen")
+st.caption(
+    " Avro schema data generation tool. \n\n"
+    "[Docs](https://consciousexplorer.github.io/avro-datagen/) | "
+    "[Schema guide](https://consciousexplorer.github.io/avro-datagen/schemas/writing-schemas/) | "
+    "[Examples](https://consciousexplorer.github.io/avro-datagen/schemas/examples/)"
+)
 
 
 # ── Sidebar: Kafka connection (only when --kafka) ──────────────────
@@ -195,9 +210,10 @@ tab_local, tab_upload, tab_editor = st.tabs(["Local schemas", "Upload", "Editor"
 
 # ── Tab 1: Local schemas ─────────────────────────────────────────────
 with tab_local:
-    avsc_files = sorted(SCHEMA_DIR.glob("*.avsc")) if SCHEMA_DIR.is_dir() else []
+    _schema_dir = _get_schema_dir()
+    avsc_files = sorted(_schema_dir.glob("*.avsc")) if _schema_dir.is_dir() else []
     if not avsc_files:
-        st.info(f"No `.avsc` files in `{SCHEMA_DIR}/`")
+        st.info(f"No `.avsc` files in `{_schema_dir}/`")
     else:
         selected = st.selectbox(
             "Schema file",
@@ -305,13 +321,13 @@ with tab_editor:
             fn = save_filename.strip() or "schema.avsc"
             if not fn.endswith(".avsc"):
                 fn += ".avsc"
-            SCHEMA_DIR.mkdir(parents=True, exist_ok=True)
-            save_path = SCHEMA_DIR / fn
+            SAVE_DIR.mkdir(parents=True, exist_ok=True)
+            save_path = SAVE_DIR / fn
             formatted = json.dumps(parsed, indent=2) + "\n"
             with open(save_path, "w") as f:
                 f.write(formatted)
             st.session_state.save_filename = fn
-            st.toast(f"Saved to `{SCHEMA_DIR / fn}`", icon=":material/save:")
+            st.toast(f"Saved to `{save_path}`", icon=":material/save:")
     with col_download:
         if editor_valid and parsed:
             fn = save_filename.strip() or "schema.avsc"

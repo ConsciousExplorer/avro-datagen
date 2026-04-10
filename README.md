@@ -1,4 +1,4 @@
-# avro-datagen
+# 📝 avro-datagen
 
 [![CI](https://github.com/ConsciousExplorer/avro-datagen/actions/workflows/publish.yml/badge.svg)](https://github.com/ConsciousExplorer/avro-datagen/actions/workflows/publish.yml)
 [![PyPI version](https://img.shields.io/pypi/v/avro-datagen)](https://pypi.org/project/avro-datagen/)
