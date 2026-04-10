@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-04-10
+
+### Fixed
+
+- CI workflow name for PyPI trusted publisher
+- README badge URL
+- Pyright type-checking errors in resolver and producer
+
+### Changed
+
+- Consolidated CI, docs, and publish into a single workflow pipeline
+- Publish and docs deploy now require checks to pass first
+- Renamed package from `data_generator` to `avro_datagen` for consistency with PyPI name
+- Migrated from PDM to uv
+- Added Ruff (linting + formatting) and Pyright (type checking)
+- Tightened type hints across resolver, producer, and generator
+
 ## [0.1.0] - 2026-04-10
 
 ### Added
@@ -23,4 +40,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for all Avro primitives, logical types (uuid, timestamp-millis, iso-timestamp, date), records, arrays, maps, enums, unions, fixed
 - MkDocs documentation site with API reference auto-generated from docstrings
 
+[0.1.1]: https://github.com/ConsciousExplorer/avro-datagen/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ConsciousExplorer/avro-datagen/releases/tag/v0.1.0
