@@ -18,11 +18,14 @@ from typing import Any
 type AvroType = str | dict[str, Any] | list[Any]
 
 try:
-    from faker import Faker as _Faker
+    from faker import Faker
 
-    _faker = _Faker()
+    _faker: Any = Faker()
+    _has_faker = True
 except ImportError:
+    Faker = None  # type: ignore[assignment,misc]
     _faker = None
+    _has_faker = False
 
 
 def load_schema(path: str | Path) -> dict:
@@ -149,7 +152,7 @@ class RecordResolver:
                        {"method": "random_int", "kwargs": {"min": 1, "max": 100}}
                        {"method": "name", "locale": "ja_JP"}
         """
-        if _faker is None:
+        if not _has_faker:
             raise RuntimeError(
                 "faker hint requires the faker package — install with: pip install faker"
             )
@@ -165,7 +168,7 @@ class RecordResolver:
             kwargs = spec.get("kwargs", {})
             locale = spec.get("locale")
 
-        provider = _Faker(locale) if locale else _faker
+        provider = Faker(locale) if locale else _faker  # pyright: ignore[reportOptionalCall]
 
         method = getattr(provider, method_name, None)
         if method is None:
@@ -210,7 +213,7 @@ class RecordResolver:
     def _resolve_pool(self, avro_type: AvroType, props: dict) -> Any:
         """Return a value from a pre-generated pool, creating it if needed."""
         # Use a stable key based on the logical type
-        logical = self._get_logical_type(avro_type)
+        logical = self._get_logical_type(avro_type) or "string"
         pool_size = props["pool"]
         pool_key = f"{logical}:{pool_size}"
 
@@ -312,7 +315,9 @@ class RecordResolver:
                 size = avro_type.get("size", 1)
                 return random.randbytes(size).hex()
             # Fall through to primitive
-            return self._generate_primitive(inner_type)
+            if isinstance(inner_type, str):
+                return self._generate_primitive(inner_type)
+            return None
 
         # Primitive type string: "string", "int", "long", etc.
         if isinstance(avro_type, str):
