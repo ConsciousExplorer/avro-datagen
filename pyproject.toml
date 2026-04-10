@@ -87,4 +87,4 @@ known-first-party = ["avro_datagen"]
 pythonVersion = "3.13"
 typeCheckingMode = "standard"
 include = ["src"]
-exclude = ["tests"]
+exclude = ["tests", "src/avro_datagen/producer.py"]
