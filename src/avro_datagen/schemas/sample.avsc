@@ -1,0 +1,130 @@
+{
+  "type": "record",
+  "name": "sample",
+  "namespace": "sample",
+  "fields": [
+    {
+      "name": "id",
+      "type": {
+        "type": "string",
+        "logicalType": "uuid"
+      }
+    },
+    {
+      "name": "customerId",
+      "type": {
+        "type": "string",
+        "logicalType": "uuid"
+      },
+      "arg.properties": {
+        "pool": 20
+      }
+    },
+    {
+      "name": "customerName",
+      "type": "string",
+      "arg.properties": {
+        "faker": "name"
+      }
+    },
+    {
+      "name": "email",
+      "type": "string",
+      "arg.properties": {
+        "faker": "email"
+      }
+    },
+    {
+      "name": "region",
+      "type": "string",
+      "arg.properties": {
+        "options": [
+          "us-east",
+          "us-west",
+          "eu-west",
+          "eu-central",
+          "ap-south",
+          "ap-east"
+        ]
+      }
+    },
+    {
+      "name": "orderRef",
+      "type": "string",
+      "arg.properties": {
+        "pattern": "ORD-[A-Z]{3}-[0-9]{6}"
+      }
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "arg.properties": {
+        "options": ["pending", "confirmed", "shipped", "delivered", "cancelled"]
+      }
+    },
+    {
+      "name": "itemCount",
+      "type": "int",
+      "arg.properties": {
+        "range": {
+          "min": 1,
+          "max": 20
+        }
+      }
+    },
+    {
+      "name": "amount",
+      "type": "double",
+      "arg.properties": {
+        "range": {
+          "min": 5.0,
+          "max": 500.0
+        }
+      }
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "arg.properties": {
+        "options": ["USD", "EUR", "GBP", "ZAR", "JPY"]
+      }
+    },
+    {
+      "name": "summary",
+      "type": "string",
+      "arg.properties": {
+        "template": "{customerName} — {orderRef} ({status})"
+      }
+    },
+    {
+      "name": "shippedAt",
+      "type": ["null", { "type": "long", "logicalType": "timestamp-millis" }],
+      "default": null,
+      "arg.properties": {
+        "rules": [
+          {
+            "when": { "field": "status", "equals": "shipped" },
+            "then": { "range": { "min": "-3d", "max": "now" } }
+          },
+          {
+            "when": { "field": "status", "equals": "delivered" },
+            "then": { "range": { "min": "-7d", "max": "-1d" } }
+          }
+        ]
+      }
+    },
+    {
+      "name": "createdAt",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "arg.properties": {
+        "range": {
+          "min": "-30d",
+          "max": "now"
+        }
+      }
+    }
+  ]
+}
