@@ -67,7 +67,7 @@ class TestSeedReproducibility:
         """Every field in the transaction schema is identical across seeded runs."""
         first = list(generate(TXN_SCHEMA, count=20, seed=55))
         second = list(generate(TXN_SCHEMA, count=20, seed=55))
-        for i, (a, b) in enumerate(zip(first, second)):
+        for i, (a, b) in enumerate(zip(first, second, strict=True)):
             for key in a:
                 assert a[key] == b[key], f"Record {i}, field {key!r}: {a[key]!r} != {b[key]!r}"
 
