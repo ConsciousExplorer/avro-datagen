@@ -35,9 +35,10 @@ class RecordResolver:
     pooled values are reused across records.
     """
 
-    def __init__(self, schema: dict[str, Any]):
+    def __init__(self, schema: dict[str, Any], seed: int | None = None):
         self.schema = schema
         self.fields: list[dict[str, Any]] = schema["fields"]
+        self.seed = seed
         # Pools: field_name -> list of pre-generated values
         self.pools: dict[str, list[Any]] = {}
         # Capture "now" once so timestamps are reproducible with a seed
@@ -45,6 +46,8 @@ class RecordResolver:
         # Named record types encountered during resolution (for recursive records)
         self.named_types: dict[str, dict[str, Any]] = {}
         self._indexnamed_types(schema)
+        # Cache for locale-specific Faker instances (seeded consistently)
+        self._locale_fakers: dict[str, Faker] = {}
 
     def _indexnamed_types(self, schema: dict) -> None:
         """Walk the schema and index all named record types for reference."""
@@ -157,7 +160,15 @@ class RecordResolver:
             kwargs = spec.get("kwargs", {})
             locale = spec.get("locale")
 
-        provider = Faker(locale) if locale else _faker
+        if locale:
+            if locale not in self._locale_fakers:
+                loc_faker = Faker(locale)
+                if self.seed is not None:
+                    loc_faker.seed_instance(self.seed)
+                self._locale_fakers[locale] = loc_faker
+            provider = self._locale_fakers[locale]
+        else:
+            provider = _faker
 
         method = getattr(provider, method_name, None)
         if method is None:

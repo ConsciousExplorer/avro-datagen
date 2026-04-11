@@ -1,0 +1,20 @@
+{
+  "type": "record",
+  "name": "FakerFields",
+  "fields": [
+    {
+      "name": "fullName",
+      "type": "string",
+      "arg.properties": { "faker": "name" }
+    },
+    {
+      "name": "email",
+      "type": "string",
+      "arg.properties": { "faker": "email" }
+    },
+    {
+      "name": "userId",
+      "type": { "type": "string", "logicalType": "uuid" }
+    }
+  ]
+}

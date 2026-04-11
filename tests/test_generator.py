@@ -8,6 +8,7 @@ from avro_datagen.generator import generate
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 TXN_SCHEMA = FIXTURES_DIR / "transaction.avsc"
+FAKER_SCHEMA = FIXTURES_DIR / "faker_fields.avsc"
 
 
 class TestGenerate:
@@ -38,6 +39,37 @@ class TestGenerate:
     def test_each_record_is_a_dict(self):
         for record in generate(TXN_SCHEMA, count=3):
             assert isinstance(record, dict)
+
+
+class TestSeedReproducibility:
+    """Verify that seeded generation is fully deterministic, including Faker fields."""
+
+    def test_faker_fields_reproducible(self):
+        """Faker-backed fields (name, email) must be identical across seeded runs."""
+        first = list(generate(FAKER_SCHEMA, count=10, seed=99))
+        second = list(generate(FAKER_SCHEMA, count=10, seed=99))
+        assert first == second
+
+    def test_faker_fields_differ_without_seed(self):
+        """Without a seed, Faker fields should vary between runs."""
+        first = list(generate(FAKER_SCHEMA, count=20))
+        second = list(generate(FAKER_SCHEMA, count=20))
+        # Extremely unlikely (but not impossible) for 20 names + emails to collide
+        assert first != second
+
+    def test_uuid_fields_reproducible(self):
+        """UUID logicalType fields must be identical across seeded runs."""
+        first = [r["userId"] for r in generate(FAKER_SCHEMA, count=10, seed=7)]
+        second = [r["userId"] for r in generate(FAKER_SCHEMA, count=10, seed=7)]
+        assert first == second
+
+    def test_full_schema_field_level_reproducibility(self):
+        """Every field in the transaction schema is identical across seeded runs."""
+        first = list(generate(TXN_SCHEMA, count=20, seed=55))
+        second = list(generate(TXN_SCHEMA, count=20, seed=55))
+        for i, (a, b) in enumerate(zip(first, second)):
+            for key in a:
+                assert a[key] == b[key], f"Record {i}, field {key!r}: {a[key]!r} != {b[key]!r}"
 
 
 class TestTransactionSchema:

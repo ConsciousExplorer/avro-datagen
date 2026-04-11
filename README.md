@@ -10,12 +10,15 @@ Schema-driven fake data generator for Avro schemas. Reads `.avsc` files with
 `arg.properties` hints and produces realistic records. Includes
 [Faker](https://faker.readthedocs.io/) for names, emails, addresses, and more.
 
+**avro-datagen generates data -- nothing more.** Pipe JSON output to Kafka,
+databases, files, or any other sink using the tools you already have.
+
 ## Install
 
 ```bash
 pip install avro-datagen                 # CLI + library + Faker
 pip install "avro-datagen[ui]"           # + Streamlit web UI
-pip install "avro-datagen[app]"          # + UI + Kafka producer
+pip install "avro-datagen[app]"          # + UI + Kafka producer (for interactive testing)
 ```
 
 ## Web UI
@@ -74,6 +77,20 @@ for record in generate("order.avsc", count=100):
 # Deterministic output
 records = list(generate("order.avsc", count=10, seed=42))
 ```
+
+## Sinks and integrations
+
+avro-datagen does not bundle integrations for databases, cloud storage, or
+message queues. The CLI emits JSON lines to stdout -- pipe it anywhere:
+
+```bash
+avro-datagen -s schema.avsc -c 1000 | kcat -b localhost:9092 -t topic   # Kafka
+avro-datagen -s schema.avsc -c 1000 > data.jsonl                        # File
+avro-datagen -s schema.avsc -c 1000 | psql -c "COPY t FROM STDIN"       # Postgres
+```
+
+The Kafka producer in the UI (`--kafka`) is a convenience for interactive
+testing, not a production integration.
 
 ## Development
 

@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
-from avro_datagen.resolver import RecordResolver, load_schema
+from avro_datagen.resolver import RecordResolver, _faker, load_schema
 
 # Fixed epoch used when a seed is provided, so output is fully deterministic.
 _FIXED_EPOCH = datetime(2026, 1, 1, tzinfo=UTC).timestamp()
@@ -28,9 +28,10 @@ def generate(
     """
     if seed is not None:
         random.seed(seed)
+        _faker.seed_instance(seed)
 
     schema = load_schema(schema_path)
-    resolver = RecordResolver(schema)
+    resolver = RecordResolver(schema, seed=seed)
 
     # Pin the clock when seeded so timestamps are reproducible
     if seed is not None:

@@ -4,14 +4,47 @@ Schema-driven fake data generator for Avro schemas. Reads `.avsc` files
 with `arg.properties` hints and produces realistic records -- no code changes
 needed for new data shapes.
 
+**avro-datagen does one thing: generate data.** It is not a pipeline tool, a
+Kafka connector, or a database loader. It produces JSON records from Avro
+schemas -- what you do with those records is up to you and your existing
+toolchain.
+
 ## Features
 
-- **Web UI** -- browse schemas, edit live, preview data, optionally produce to Kafka
 - **Schema-driven** -- define data shape and generation hints in a single `.avsc` file
 - **Faker included** -- use any [Faker](https://faker.readthedocs.io/) provider via `arg.properties` out of the box
 - **Deterministic** -- seed for fully reproducible output
 - **Conditional fields** -- rules engine for field dependencies
-- **Multiple outputs** -- Web UI, CLI (JSON lines), Python library, Kafka producer
+- **Multiple outputs** -- Web UI, CLI (JSON lines), Python library
+- **Web UI** -- browse schemas, edit live, preview and download generated data
+
+## Sinks and integrations
+
+avro-datagen deliberately does **not** bundle integrations for databases, cloud
+storage, message queues, or other downstream systems. The CLI emits JSON lines
+to stdout, which means you can pipe output to any sink using the tools you
+already have:
+
+```bash
+# Kafka (via kcat)
+avro-datagen -s schema.avsc -c 1000 | kcat -b localhost:9092 -t my-topic
+
+# PostgreSQL
+avro-datagen -s schema.avsc -c 1000 | psql -c "COPY my_table FROM STDIN (FORMAT csv)"
+
+# File
+avro-datagen -s schema.avsc -c 1000 > data.jsonl
+
+# S3
+avro-datagen -s schema.avsc -c 1000 > data.jsonl && aws s3 cp data.jsonl s3://bucket/
+
+# jq transform then pipe anywhere
+avro-datagen -s schema.avsc -c 1000 | jq '.amount' | ...
+```
+
+The Kafka producer built into the Streamlit UI (`--kafka` flag) is a convenience
+for interactive testing. For production pipelines, use the CLI with your
+preferred ingestion tooling.
 
 ## Quick start
 

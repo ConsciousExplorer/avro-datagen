@@ -1,8 +1,13 @@
-# Running the producer as a Kafka application
+# Producing to Kafka
 
-This guide covers running `avro_datagen` as a long-lived Python process that
-produces directly to a Kafka topic on startup. This is the approach you'd use
-in a Kubernetes deployment or docker-compose service.
+avro-datagen is a **data generator**, not a Kafka connector. The recommended
+approach for production pipelines is to pipe CLI output to a dedicated Kafka
+producer tool like `kcat` or `kafka-console-producer` (see
+[kafka-pipe.md](kafka-pipe.md)).
+
+This page covers two alternatives: a custom Python producer app using the
+`avro_datagen` library, and the built-in Streamlit UI producer for interactive
+testing.
 
 ## Prerequisites
 
@@ -97,11 +102,14 @@ for record in generate(schema_path, count=0):
     time.sleep(1 / rate)  # throttle to target rate
 ```
 
-## Streamlit UI producer
+## Streamlit UI producer (interactive testing)
 
-The Streamlit UI includes a built-in Kafka producer section. Launch with:
+The Streamlit UI includes a built-in Kafka producer for quick interactive
+testing. This is a convenience for validating schemas against a broker, not a
+production integration.
 
 ```bash
+pip install "avro-datagen[app]"
 avro-datagen ui --kafka
 ```
 
@@ -111,6 +119,14 @@ The UI provides:
 - A **Stop** button to cancel a running produce
 - Color-coded result banners: green for success, red for errors (e.g. topic not found, connection refused), yellow for partial failures
 
-## Current limitations
+## Recommended approach for production
 
-- **No standalone `produce` CLI command yet.** The producer is accessible via the Streamlit UI (`--kafka` flag) or programmatically via `avro_datagen.producer.produce()`. For now, use the pipe approach described in [kafka-pipe.md](kafka-pipe.md) if you need a CLI-only workflow.
+For production or CI pipelines, use the CLI with a dedicated Kafka tool:
+
+```bash
+avro-datagen -s schema.avsc -c 10000 --rate 100 \
+  | kcat -b broker:9092 -t my-topic
+```
+
+This keeps avro-datagen focused on generation and delegates delivery to
+purpose-built tools with their own retry, batching, and error handling.

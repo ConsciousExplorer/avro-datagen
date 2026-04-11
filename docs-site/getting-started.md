@@ -45,11 +45,12 @@ avro-datagen ui --kafka                        # enable Kafka producer section
 The UI uses bundled example schemas by default. Point `--schema-dir` at your
 own schemas to use them instead.
 
-### Kafka mode
+### Kafka mode (interactive testing only)
 
 By default the UI focuses on schema editing and data generation -- no Kafka
-dependency required. Add `--kafka` to enable the Kafka sidebar (connection,
-auth, tuning) and the produce section:
+dependency required. The `--kafka` flag enables a built-in producer for quick
+interactive testing against a broker. For production pipelines, pipe the CLI
+output to `kcat`, `kafka-console-producer`, or your preferred ingestion tool.
 
 ```bash
 pip install "avro-datagen[app]"    # includes confluent-kafka

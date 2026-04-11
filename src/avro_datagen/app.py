@@ -125,6 +125,7 @@ st.caption(
 
 
 # ── Sidebar: Kafka connection (only when --kafka) ──────────────────
+rate = 0.0
 if KAFKA_ENABLED:
     with st.sidebar:
         st.subheader("Connection")
@@ -181,6 +182,15 @@ if KAFKA_ENABLED:
             "Compression",
             ["none", "gzip", "snappy", "lz4", "zstd"],
             index=2,
+        )
+
+        st.subheader("Rate limit")
+        rate = st.number_input(
+            "Rate (rec/s)",
+            value=0.0,
+            min_value=0.0,
+            step=1.0,
+            help="0 = no limit",
         )
 
 
@@ -272,7 +282,6 @@ with tab_upload:
                 formatted = json.dumps(upload_dict, indent=2) + "\n"
                 with open(save_path, "w") as f:
                     f.write(formatted)
-                st.session_state.save_filename_upload = fn
                 st.toast(f"Saved to `{save_path}`", icon=":material/save:")
 
         col_schema, col_sample = st.columns(2, gap="large")
@@ -393,7 +402,7 @@ st.divider()
 # ═══════════════════════════════════════════════════════════════════════
 st.subheader("Generate")
 
-col_count, col_rate, col_seed = st.columns(3)
+col_count, col_seed = st.columns(2)
 
 with col_count:
     count = st.number_input(
@@ -402,14 +411,6 @@ with col_count:
         min_value=0,
         step=10,
         help="0 = infinite (use Stop button)",
-    )
-with col_rate:
-    rate = st.number_input(
-        "Rate (rec/s)",
-        value=0.0,
-        min_value=0.0,
-        step=1.0,
-        help="0 = no limit",
     )
 with col_seed:
     seed = st.number_input(
@@ -430,33 +431,17 @@ if schema_path and gen_schema:
 
     if st.button("Generate", use_container_width=True, type="primary"):
         gen_path = _schema_to_tmp(gen_schema)
-        metrics_ph = st.empty()
-        table_ph = st.empty()
 
-        records = []
         start_t = time.time()
-        delay = (1.0 / effective_rate) if effective_rate else 0
-        # Batch UI updates: refresh every N records or 150ms
-        last_render = start_t
+        records = list(generate(str(gen_path), count=gen_count, seed=effective_seed))
+        elapsed = time.time() - start_t
+        actual_rate = len(records) / elapsed if elapsed > 0 else 0
 
-        for i, record in enumerate(generate(str(gen_path), count=gen_count, seed=effective_seed)):
-            records.append(record)
-            now = time.time()
-            elapsed = now - start_t
-            is_last = (i + 1) == gen_count
-
-            if is_last or (now - last_render) >= 0.15:
-                actual_rate = (i + 1) / elapsed if elapsed > 0 else 0
-                with metrics_ph.container():
-                    m1, m2, m3 = st.columns(3)
-                    m1.metric("Records", f"{i + 1:,} / {gen_count:,}")
-                    m2.metric("Rate", f"{actual_rate:,.0f} rec/s")
-                    m3.metric("Elapsed", f"{elapsed:.2f}s")
-                table_ph.dataframe(records, use_container_width=True, hide_index=True)
-                last_render = now
-
-            if delay:
-                time.sleep(delay)
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Records", f"{len(records):,} / {gen_count:,}")
+        m2.metric("Rate", f"{actual_rate:,.0f} rec/s")
+        m3.metric("Elapsed", f"{elapsed:.2f}s")
+        st.dataframe(records, use_container_width=True, hide_index=True)
 
         os.unlink(gen_path)
 

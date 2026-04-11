@@ -4,20 +4,16 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
-  pull_request:
-    branches: [main]
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # ─── Always runs ──────────────────────────────────────────────
+  # ─── Always runs on main and tags ────────────────────────────
   check:
     runs-on: ubuntu-latest
     steps:
@@ -42,11 +38,12 @@ jobs:
       - name: Test
         run: uv run pytest -v --cov=avro_datagen --cov-report=term-missing --cov-branch
 
-  # ─── Only on main, after checks pass ─────────────────────────
+  # ─── Docs: on main push and tags ─────────────────────────────
   docs-build:
     needs: check
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
     steps:
       - uses: actions/checkout@v4
 
@@ -67,6 +64,9 @@ jobs:
   docs-deploy:
     needs: docs-build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -74,16 +74,11 @@ jobs:
       - id: deployment
         uses: actions/deploy-pages@v4
 
-  # ─── Only on version tags, after checks pass ─────────────────
-  publish:
+  # ─── PyPI: only on version tags ──────────────────────────────
+  build:
     needs: check
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/avro-datagen
-    permissions:
-      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -93,6 +88,25 @@ jobs:
 
       - name: Build package
         run: uv build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/avro-datagen
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
