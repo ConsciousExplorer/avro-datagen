@@ -66,7 +66,8 @@ every record. Creates realistic cardinality.
 
 ## pattern
 
-Regex-like string generation. Supports character classes and repetition.
+Regex-like string generation. Supports character classes, shortcuts,
+quantifiers, alternation, and escape sequences.
 
 ```json
 "arg.properties": {
@@ -76,15 +77,43 @@ Regex-like string generation. Supports character classes and repetition.
 
 Produces strings like `ABK-3847`, `QWE-0012`.
 
-Supported syntax:
+### Supported syntax
 
 | Pattern | Generates |
 |---------|-----------|
-| `[A-Z]` | One uppercase letter |
-| `[a-z]` | One lowercase letter |
-| `[0-9]` | One digit |
-| `{N}` | Repeat previous class N times |
+| `[A-Z]`, `[a-z]`, `[0-9]` | Character classes |
+| `[^0-9]` | Negated class (any char except digits) |
+| `\d`, `\w`, `\s` | Digit, word char, whitespace shortcuts |
+| `\D`, `\W`, `\S` | Negated shortcuts |
+| `{n}` | Exact repetition |
+| `{n,m}` | Variable repetition (n to m) |
+| `?` | Optional (0 or 1) |
+| `*` | Zero or more (capped at 5) |
+| `+` | One or more (capped at 5) |
+| `(foo\|bar\|baz)` | Alternation — picks one alternative |
+| `\.`, `\(`, `\\` | Escaped literals |
 | Literal chars | Used as-is |
+
+### Examples
+
+| Pattern | Example output |
+|---------|---------------|
+| `[A-Z]{3}-[0-9]{4}` | `ABK-3847` |
+| `exist-[A-Z]{3}` | `exist-QWE` |
+| `\d{3}-\w{4}` | `847-ab_3` |
+| `[a-z]{3,6}` | `foobar` or `xy` or `abcdef` |
+| `(foo\|bar)-\d+` | `foo-123`, `bar-4` |
+| `user_[a-z]{6}@example\.com` | `user_abcdef@example.com` |
+
+### Not supported
+
+- Anchors (`^`, `$`)
+- Lookaheads / lookbehinds
+- Backreferences
+- Nested groups
+
+Malformed patterns raise a clear `ValueError`. For more complex generation
+needs, use the `faker` hint with a provider like `bothify` or `pystr_format`.
 
 ## ref
 

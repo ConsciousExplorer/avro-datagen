@@ -11,7 +11,7 @@ import random
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from faker import Faker
 
@@ -245,39 +245,195 @@ class RecordResolver:
             return random.randint(int(low), int(high))
         return round(random.uniform(low, high), 2)
 
-    def _resolve_pattern(self, pattern: str) -> str:
-        """Generate a string from a simple regex-like pattern.
+    # Default cap for unbounded quantifiers (* and +). Keeps generated
+    # strings reasonable without users specifying bounds.
+    _UNBOUNDED_MAX = 5
 
-        Supports: [A-Z], [a-z], [0-9], {n} repetition, and literal chars.
-        Not a full regex engine — covers common data generation patterns.
+    # Built-in character class shortcuts (\d, \w, \s and their negations).
+    _SHORTCUT_CLASSES: ClassVar[dict[str, list[str]]] = {
+        "d": list("0123456789"),
+        "D": [chr(c) for c in range(32, 127) if not chr(c).isdigit()],
+        "w": list("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"),
+        "W": [chr(c) for c in range(32, 127) if not (chr(c).isalnum() or chr(c) == "_")],
+        "s": list(" \t"),
+        "S": [chr(c) for c in range(33, 127)],
+    }
+
+    def _resolve_pattern(self, pattern: str) -> str:
+        """Generate a string from a regex-like pattern.
+
+        Supported syntax:
+          - Character classes: [A-Z], [a-z], [0-9], [^0-9] (negation)
+          - Shortcuts: \\d, \\w, \\s, \\D, \\W, \\S
+          - Quantifiers: {n}, {n,m}, ?, *, +
+          - Groups with alternation: (foo|bar|baz)
+          - Escape sequences: \\., \\(, \\[, \\{, \\\\
+          - Any other literal char
+
+        Not a full regex engine — no anchors, lookaheads, backreferences.
+        Raises ValueError with a clear message on malformed patterns.
         """
-        result = []
-        i = 0
-        while i < len(pattern):
-            if pattern[i] == "[":
-                # Character class
-                end = pattern.index("]", i)
-                char_class = pattern[i + 1 : end]
-                i = end + 1
-                # Check for repetition {n}
-                count = 1
-                if i < len(pattern) and pattern[i] == "{":
-                    rep_end = pattern.index("}", i)
-                    count = int(pattern[i + 1 : rep_end])
-                    i = rep_end + 1
-                chars = self._expand_char_class(char_class)
-                for _ in range(count):
-                    result.append(random.choice(chars))
+        try:
+            return self._parse_pattern(pattern, 0, len(pattern))[0]
+        except (IndexError, ValueError, KeyError) as e:
+            raise ValueError(f"Invalid pattern {pattern!r}: {e}") from e
+
+    def _parse_pattern(self, pattern: str, start: int, end: int) -> tuple[str, int]:
+        """Parse pattern[start:end] and return (generated string, next index)."""
+        result: list[str] = []
+        i = start
+        while i < end:
+            # Alternation at group top level handled by caller via split
+            if pattern[i] == ")":
+                break
+            atom_fn, i = self._read_atom(pattern, i, end)
+            count, i = self._read_quantifier(pattern, i, end)
+            for _ in range(count):
+                result.append(atom_fn())
+        return "".join(result), i
+
+    def _read_atom(self, pattern: str, i: int, end: int):
+        """Read one atom starting at i. Return (callable producing one match, next index).
+
+        The callable returns a string — usually one character, but groups may
+        produce multi-char strings.
+        """
+        ch = pattern[i]
+
+        # Escape sequence
+        if ch == "\\":
+            if i + 1 >= end:
+                raise ValueError("Trailing backslash")
+            nxt = pattern[i + 1]
+            if nxt in self._SHORTCUT_CLASSES:
+                chars = self._SHORTCUT_CLASSES[nxt]
+                return (lambda c=chars: random.choice(c)), i + 2
+            # Escaped literal (\., \(, \\, etc.)
+            return (lambda c=nxt: c), i + 2
+
+        # Character class
+        if ch == "[":
+            close = pattern.find("]", i + 1)
+            if close == -1:
+                raise ValueError(f"Unmatched '[' at position {i}")
+            body = pattern[i + 1 : close]
+            negate = False
+            if body.startswith("^"):
+                negate = True
+                body = body[1:]
+            chars = self._expand_char_class(body)
+            if negate:
+                allowed = set(chars)
+                chars = [chr(c) for c in range(32, 127) if chr(c) not in allowed]
+            if not chars:
+                raise ValueError(f"Empty character class at position {i}")
+            return (lambda c=chars: random.choice(c)), close + 1
+
+        # Group with alternation
+        if ch == "(":
+            # Find matching ')' — no nested groups supported
+            depth = 1
+            j = i + 1
+            while j < end and depth > 0:
+                if pattern[j] == "\\" and j + 1 < end:
+                    j += 2
+                    continue
+                if pattern[j] == "(":
+                    depth += 1
+                elif pattern[j] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            if depth != 0:
+                raise ValueError(f"Unmatched '(' at position {i}")
+            body = pattern[i + 1 : j]
+            alternatives = self._split_alternatives(body)
+            if not alternatives:
+                raise ValueError(f"Empty group at position {i}")
+
+            def choose() -> str:
+                alt = random.choice(alternatives)
+                return self._parse_pattern(alt, 0, len(alt))[0]
+
+            return choose, j + 1
+
+        # Stray quantifier or closing bracket
+        if ch in "}])*+?|":
+            raise ValueError(f"Unexpected {ch!r} at position {i}")
+
+        # Literal character
+        return (lambda c=ch: c), i + 1
+
+    def _read_quantifier(self, pattern: str, i: int, end: int) -> tuple[int, int]:
+        """Read an optional quantifier. Returns (count, next index)."""
+        if i >= end:
+            return 1, i
+        ch = pattern[i]
+        if ch == "?":
+            return random.randint(0, 1), i + 1
+        if ch == "*":
+            return random.randint(0, self._UNBOUNDED_MAX), i + 1
+        if ch == "+":
+            return random.randint(1, self._UNBOUNDED_MAX), i + 1
+        if ch == "{":
+            close = pattern.find("}", i + 1)
+            if close == -1:
+                raise ValueError(f"Unmatched '{{' at position {i}")
+            body = pattern[i + 1 : close]
+            if "," in body:
+                low_s, high_s = body.split(",", 1)
+                low = int(low_s) if low_s else 0
+                high = int(high_s) if high_s else self._UNBOUNDED_MAX
             else:
-                result.append(pattern[i])
+                low = high = int(body)
+            if low > high:
+                raise ValueError(f"Invalid quantifier {{{body}}} at position {i}")
+            return random.randint(low, high), close + 1
+        return 1, i
+
+    def _split_alternatives(self, body: str) -> list[str]:
+        """Split a group body on top-level '|' characters."""
+        alternatives: list[str] = []
+        current: list[str] = []
+        i = 0
+        depth = 0
+        while i < len(body):
+            ch = body[i]
+            if ch == "\\" and i + 1 < len(body):
+                current.append(body[i : i + 2])
+                i += 2
+                continue
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            if ch == "|" and depth == 0:
+                alternatives.append("".join(current))
+                current = []
                 i += 1
-        return "".join(result)
+                continue
+            current.append(ch)
+            i += 1
+        alternatives.append("".join(current))
+        return alternatives
 
     def _expand_char_class(self, char_class: str) -> list[str]:
-        """Expand a character class like 'A-Z' or '0-9' to a list of chars."""
-        chars = []
+        """Expand a character class like 'A-Z' or '0-9' to a list of chars.
+
+        Handles backslash shortcuts (\\d, \\w, \\s) inside character classes.
+        """
+        chars: list[str] = []
         i = 0
         while i < len(char_class):
+            if char_class[i] == "\\" and i + 1 < len(char_class):
+                nxt = char_class[i + 1]
+                if nxt in self._SHORTCUT_CLASSES:
+                    chars.extend(self._SHORTCUT_CLASSES[nxt])
+                else:
+                    chars.append(nxt)
+                i += 2
+                continue
             if i + 2 < len(char_class) and char_class[i + 1] == "-":
                 start = ord(char_class[i])
                 end = ord(char_class[i + 2])

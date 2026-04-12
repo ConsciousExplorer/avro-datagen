@@ -4,6 +4,8 @@ import random
 import uuid
 from datetime import UTC, datetime
 
+import pytest
+
 from avro_datagen.resolver import RecordResolver
 
 
@@ -231,25 +233,133 @@ class TestPool:
 
 
 class TestPattern:
-    def test_simple_pattern(self):
-        schema = {
+    def _pattern_schema(self, pattern):
+        return {
             "type": "record",
             "name": "T",
             "fields": [
                 {
                     "name": "code",
                     "type": "string",
-                    "arg.properties": {
-                        "pattern": "[A-Z]{3}-[0-9]{4}",
-                    },
+                    "arg.properties": {"pattern": pattern},
                 },
             ],
         }
+
+    def test_simple_pattern(self):
         random.seed(42)
-        record = RecordResolver(schema).generate()
+        record = RecordResolver(self._pattern_schema("[A-Z]{3}-[0-9]{4}")).generate()
         import re
 
         assert re.match(r"^[A-Z]{3}-[0-9]{4}$", record["code"])
+
+    def test_literal_prefix(self):
+        """Prefix literals mix with character classes."""
+        random.seed(42)
+        for _ in range(20):
+            record = RecordResolver(self._pattern_schema("exist-[A-Z]{3}")).generate()
+            assert record["code"].startswith("exist-")
+            assert len(record["code"]) == len("exist-") + 3
+
+    def test_shortcut_classes(self):
+        """\\d, \\w, \\s shortcuts work."""
+        import re
+
+        random.seed(42)
+        for _ in range(20):
+            record = RecordResolver(self._pattern_schema(r"\d{3}-\w{4}")).generate()
+            assert re.match(r"^[0-9]{3}-\w{4}$", record["code"])
+
+    def test_range_quantifier(self):
+        """{n,m} produces variable length."""
+        random.seed(42)
+        seen_lengths = set()
+        for _ in range(50):
+            record = RecordResolver(self._pattern_schema("[a-z]{3,6}")).generate()
+            seen_lengths.add(len(record["code"]))
+            assert 3 <= len(record["code"]) <= 6
+        assert len(seen_lengths) > 1, "Expected varied lengths"
+
+    def test_optional_quantifier(self):
+        """? produces 0 or 1 occurrences."""
+        random.seed(42)
+        values = set()
+        for _ in range(50):
+            record = RecordResolver(self._pattern_schema("pre[0-9]?")).generate()
+            values.add(record["code"])
+        # Should see both "pre" and "pre<digit>"
+        assert any(len(v) == 3 for v in values), "Expected some bare 'pre'"
+        assert any(len(v) == 4 for v in values), "Expected some pre + digit"
+
+    def test_plus_quantifier(self):
+        """+ produces 1 or more (capped at 5)."""
+        random.seed(42)
+        for _ in range(50):
+            record = RecordResolver(self._pattern_schema("[a-z]+")).generate()
+            assert 1 <= len(record["code"]) <= 5
+
+    def test_star_quantifier(self):
+        """* produces 0 or more (capped at 5)."""
+        random.seed(42)
+        lengths = set()
+        for _ in range(100):
+            record = RecordResolver(self._pattern_schema("[a-z]*")).generate()
+            lengths.add(len(record["code"]))
+            assert 0 <= len(record["code"]) <= 5
+        assert 0 in lengths, "Expected some empty strings"
+
+    def test_alternation(self):
+        """(a|b|c) picks one alternative."""
+        random.seed(42)
+        values = set()
+        for _ in range(50):
+            record = RecordResolver(self._pattern_schema("(cat|dog|bird)")).generate()
+            values.add(record["code"])
+        assert values == {"cat", "dog", "bird"}
+
+    def test_alternation_with_quantifier(self):
+        """Groups can have quantifiers."""
+        random.seed(42)
+        for _ in range(30):
+            record = RecordResolver(self._pattern_schema("(foo|bar)-[0-9]{3}")).generate()
+            assert record["code"].startswith(("foo-", "bar-"))
+            assert len(record["code"]) == 7
+
+    def test_negated_class(self):
+        """[^0-9] excludes digits."""
+        random.seed(42)
+        for _ in range(30):
+            record = RecordResolver(self._pattern_schema("[^0-9]{5}")).generate()
+            assert not any(c.isdigit() for c in record["code"])
+
+    def test_escape_literal(self):
+        """\\. produces a literal dot, \\( a literal paren."""
+        random.seed(42)
+        for _ in range(10):
+            record = RecordResolver(self._pattern_schema(r"[a-z]{3}\.[a-z]{3}")).generate()
+            assert "." in record["code"]
+            assert record["code"].count(".") == 1
+
+    def test_unmatched_bracket_raises(self):
+        """Malformed patterns raise ValueError, not IndexError."""
+        random.seed(42)
+        with pytest.raises(ValueError, match="Invalid pattern"):
+            RecordResolver(self._pattern_schema("[A-Z")).generate()
+
+    def test_unmatched_paren_raises(self):
+        random.seed(42)
+        with pytest.raises(ValueError, match="Invalid pattern"):
+            RecordResolver(self._pattern_schema("(foo|bar")).generate()
+
+    def test_empty_class_raises(self):
+        random.seed(42)
+        with pytest.raises(ValueError, match="Invalid pattern"):
+            RecordResolver(self._pattern_schema("[]")).generate()
+
+    def test_trailing_backslash_raises(self):
+        random.seed(42)
+        with pytest.raises(ValueError, match="Invalid pattern"):
+            RecordResolver(self._pattern_schema("abc\\")).generate()
 
 
 class TestRef:
