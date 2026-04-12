@@ -57,11 +57,12 @@ The UI looks for schemas in this order:
 | **Upload** | Drop any `.avsc` or `.json` file. Collapsible JSON view + sample record |
 | **Editor** | Full JSON editor. Live sample record updates as you type. Save to file or download |
 
-### Generate (streaming)
+### Generate
 
-- Set record count, rate limit, and seed
-- Records stream into the table one by one
-- Live metrics: count, generation rate (rec/s), elapsed time
+- Set record count and seed
+- Records generated in one batch, displayed as a table
+- Metrics: count, generation rate (rec/s), elapsed time
+- Expandable "How fields are resolved" section explains the resolution path for each field
 
 ### Kafka Produce
 

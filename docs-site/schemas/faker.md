@@ -119,6 +119,6 @@ Use Faker inside conditional rules:
 ```
 
 !!! note "Seed behaviour"
-    Faker has its own RNG. When using `--seed`, Faker-generated values are
-    **not** controlled by the generator's seed. For fully deterministic output,
-    prefer the built-in hints (`options`, `pattern`, `pool`).
+    When using `--seed`, Faker output is also seeded via `seed_instance()`,
+    making all generated values — including Faker fields — fully deterministic
+    and reproducible across runs.

@@ -132,7 +132,8 @@ for record in generate("schemas/transaction.avsc", count=0):
 
 When a seed is provided:
 
-- `random.seed()` controls all randomness
+- `random.seed()` controls all randomness (options, ranges, pools, etc.)
+- `Faker.seed_instance()` controls all Faker output (names, emails, etc.)
 - Timestamps pin to a fixed epoch (`2026-01-01T00:00:00Z`)
 - Output is fully deterministic across runs
 

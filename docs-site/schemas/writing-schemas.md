@@ -67,12 +67,11 @@ any field declared above it via `ref`, `template`, or `rules`.
 
 For each field, the resolver checks (in order):
 
-1. **`rules`** in `arg.properties` -- conditional logic
-2. **`ref`** in `arg.properties` -- copy from another field
-3. **`faker`** in `arg.properties` -- Faker provider
-4. **Other hints** -- `template`, `options`, `pool`, `range`, `pattern`
-5. **`default`** -- Avro default value
-6. **Type fallback** -- generate from Avro type
+1. **`rules`** in `arg.properties` -- conditional logic (first matching rule wins)
+2. **`ref`** in `arg.properties` -- copy from another field (with type conversion)
+3. **`arg.properties` hints** -- checked in this order: `template`, `faker`, `options`, `pool`, `range`, `pattern`
+4. **`default`** -- Avro default value
+5. **Type fallback** -- generate from Avro type / logicalType
 
 The first match wins.
 
@@ -82,8 +81,15 @@ The first match wins.
 { "name": "notes", "type": ["null", "string"] }
 ```
 
-For nullable unions, the generator produces `null` ~20% of the time and the
-non-null branch ~80% of the time.
+For nullable unions, the generator produces `null` ~20% of the time by default.
+Use `null_probability` in `arg.properties` to control this:
+
+```json
+{ "name": "notes", "type": ["null", "string"], "arg.properties": { "null_probability": 0.5 } }
+```
+
+For unions with multiple non-null branches (e.g. `["null", "string", "int"]`),
+a non-null branch is chosen at random.
 
 ## Nested records
 

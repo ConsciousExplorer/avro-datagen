@@ -445,10 +445,132 @@ if schema_path and gen_schema:
 
         os.unlink(gen_path)
 
+# ═══════════════════════════════════════════════════════════════════════
+# 4. FIELD RESOLUTION EXPLAINER
+# ═══════════════════════════════════════════════════════════════════════
+if schema_dict:
+    with st.expander("How fields are resolved", icon=":material/schema:"):
+        st.caption(
+            "Shows the resolution path the generator takes for each field "
+            "in the current schema. Fields are resolved top-to-bottom — "
+            "later fields can reference earlier ones."
+        )
+
+        def _describe_type(avro_type):
+            """Return a short human-readable type label."""
+            if isinstance(avro_type, str):
+                return avro_type
+            if isinstance(avro_type, list):
+                return "union: " + " | ".join(_describe_type(b) for b in avro_type)
+            if isinstance(avro_type, dict):
+                logical = avro_type.get("logicalType")
+                inner = avro_type.get("type", "")
+                if logical:
+                    return f"{inner} ({logical})"
+                if inner == "array":
+                    return f"array<{_describe_type(avro_type.get('items', '?'))}>"
+                if inner == "map":
+                    return f"map<string, {_describe_type(avro_type.get('values', '?'))}>"
+                if inner == "enum":
+                    return f"enum({', '.join(avro_type.get('symbols', [])[:4])}{'...' if len(avro_type.get('symbols', [])) > 4 else ''})"
+                if inner == "record":
+                    return f"record({avro_type.get('name', '?')})"
+                if inner == "fixed":
+                    return f"fixed({avro_type.get('size', '?')})"
+                return inner
+            return str(avro_type)
+
+        def _describe_resolution(field):
+            """Return (priority, path_description) for a field."""
+            props = field.get("arg.properties", {})
+            avro_type = field.get("type", "string")
+
+            if "rules" in props:
+                conditions = []
+                for rule in props["rules"]:
+                    cond = rule.get("when", {})
+                    ref_field = cond.get("field", "?")
+                    if "equals" in cond:
+                        conditions.append(f'{ref_field} = "{cond["equals"]}"')
+                    elif "in" in cond:
+                        conditions.append(f"{ref_field} in {cond['in']}")
+                    elif "is_null" in cond:
+                        conditions.append(f"{ref_field} is {'null' if cond['is_null'] else 'not null'}")
+                then = rule.get("then")
+                if then is None:
+                    hint = "null"
+                elif isinstance(then, dict):
+                    hint = ", ".join(then.keys())
+                else:
+                    hint = repr(then)
+                return "1. rules", f"conditions: {'; '.join(conditions)} -> {hint}"
+
+            if "ref" in props:
+                target_logical = None
+                if isinstance(avro_type, dict):
+                    target_logical = avro_type.get("logicalType")
+                conversion = ""
+                if target_logical == "iso-timestamp":
+                    conversion = " (epoch ms -> ISO string)"
+                return "2. ref", f'copy from "{props["ref"]}"{conversion}'
+
+            if props:
+                hints_used = []
+                if "template" in props:
+                    hints_used.append(f'template: "{props["template"]}"')
+                if "faker" in props:
+                    spec = props["faker"]
+                    if isinstance(spec, str):
+                        hints_used.append(f"faker: {spec}")
+                    else:
+                        hints_used.append(f"faker: {spec.get('method', '?')}")
+                if "options" in props:
+                    opts = props["options"]
+                    preview = ", ".join(str(o) for o in opts[:4])
+                    if len(opts) > 4:
+                        preview += f", ... ({len(opts)} total)"
+                    hints_used.append(f"options: [{preview}]")
+                if "pool" in props:
+                    hints_used.append(f"pool: {props['pool']} unique values")
+                if "range" in props:
+                    r = props["range"]
+                    hints_used.append(f"range: {r.get('min')} to {r.get('max')}")
+                if "pattern" in props:
+                    hints_used.append(f'pattern: "{props["pattern"]}"')
+                if "null_probability" in props:
+                    hints_used.append(f"null_probability: {props['null_probability']}")
+                if "length" in props:
+                    hints_used.append(f"length: {props['length']}")
+                if hints_used:
+                    return "3. hints", "; ".join(hints_used)
+
+            if "default" in field:
+                return "4. default", f"value: {field['default']!r}"
+
+            return "5. type", f"generate from {_describe_type(avro_type)}"
+
+        rows = []
+        for i, field in enumerate(schema_dict.get("fields", []), 1):
+            priority, description = _describe_resolution(field)
+            rows.append({
+                "#": i,
+                "Field": field["name"],
+                "Type": _describe_type(field.get("type", "?")),
+                "Priority": priority,
+                "Resolution": description,
+            })
+
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+
+        st.caption(
+            "**Priority order:** 1. rules -> 2. ref -> 3. arg.properties hints "
+            "(template > faker > options > pool > range > pattern) -> 4. default -> 5. type"
+        )
+
 st.divider()
 
 # ═══════════════════════════════════════════════════════════════════════
-# 4. KAFKA PRODUCE (only with --kafka flag)
+# 5. KAFKA PRODUCE (only with --kafka flag)
 # ═══════════════════════════════════════════════════════════════════════
 if KAFKA_ENABLED:
     from avro_datagen.producer import build_producer_config, produce
