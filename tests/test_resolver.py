@@ -544,6 +544,80 @@ class TestUnion:
         assert len(nulls) > 0, "Expected some null values"
         assert len(non_nulls) > 0, "Expected some non-null values"
 
+    def test_null_probability_custom(self):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "opt",
+                    "type": ["null", "string"],
+                    "arg.properties": {"null_probability": 0.9},
+                },
+            ],
+        }
+        random.seed(42)
+        resolver = RecordResolver(schema)
+        values = [resolver.generate()["opt"] for _ in range(200)]
+        null_ratio = sum(1 for v in values if v is None) / len(values)
+        # With 0.9 probability, expect mostly nulls (allow some variance)
+        assert null_ratio > 0.7, f"Expected mostly nulls, got {null_ratio:.0%}"
+
+    def test_null_probability_zero_never_null(self):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "opt",
+                    "type": ["null", "string"],
+                    "arg.properties": {"null_probability": 0.0},
+                },
+            ],
+        }
+        random.seed(42)
+        resolver = RecordResolver(schema)
+        values = [resolver.generate()["opt"] for _ in range(100)]
+        assert all(v is not None for v in values), "Expected no nulls with null_probability=0"
+
+    def test_multi_branch_union_picks_all_types(self):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "val",
+                    "type": ["null", "string", "int"],
+                    "arg.properties": {"null_probability": 0.0},
+                },
+            ],
+        }
+        random.seed(42)
+        resolver = RecordResolver(schema)
+        values = [resolver.generate()["val"] for _ in range(200)]
+        types_seen = {type(v) for v in values}
+        assert str in types_seen, "Expected some string values"
+        assert int in types_seen, "Expected some int values"
+
+    def test_multi_branch_union_with_null(self):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "val",
+                    "type": ["null", "string", "int"],
+                },
+            ],
+        }
+        random.seed(42)
+        resolver = RecordResolver(schema)
+        values = [resolver.generate()["val"] for _ in range(300)]
+        types_seen = {type(v) for v in values}
+        assert type(None) in types_seen, "Expected some null values"
+        assert str in types_seen, "Expected some string values"
+        assert int in types_seen, "Expected some int values"
+
 
 class TestEnum:
     def test_enum_picks_from_symbols(self):

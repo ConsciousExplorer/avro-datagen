@@ -326,15 +326,21 @@ class RecordResolver:
         return None
 
     def _resolve_union(self, branches: list, props: dict, record: dict) -> Any:
-        """Resolve a union type. If no hints, pick a non-null branch 80% of the time."""
+        """Resolve a union type.
+
+        Supports ``null_probability`` in arg.properties to control how often
+        nullable unions produce null (default 0.2).  When multiple non-null
+        branches exist, one is chosen at random.
+        """
         non_null = [b for b in branches if b != "null"]
         has_null = "null" in branches
+        null_prob = props.get("null_probability", 0.2)
 
         if has_null and non_null:
-            # 20% chance of null by default
-            if random.random() < 0.2:
+            if random.random() < null_prob:
                 return None
-            return self._resolve_type(non_null[0], props, record)
+            branch = random.choice(non_null)
+            return self._resolve_type(branch, props, record)
 
         return self._resolve_type(random.choice(branches), props, record)
 

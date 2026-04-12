@@ -151,6 +151,29 @@ Conditional generation based on other field values.
 Rules are evaluated in order. The first matching rule wins. If no rule
 matches, the generator falls back to type-based generation.
 
+## null_probability
+
+Control how often a nullable union field produces null. Default is `0.2` (20%).
+
+```json
+{
+  "name": "notes",
+  "type": ["null", "string"],
+  "arg.properties": { "null_probability": 0.5 }
+}
+```
+
+| Value | Meaning |
+|-------|---------|
+| `0.0` | Never null |
+| `0.2` | 20% null (default) |
+| `0.5` | 50/50 |
+| `1.0` | Always null |
+
+Only applies to union types that include `"null"`. For unions with multiple
+non-null branches (e.g. `["null", "string", "int"]`), a non-null branch is
+chosen at random when the value is not null.
+
 ## faker
 
 Delegate value generation to a [Faker](https://faker.readthedocs.io/) provider.
