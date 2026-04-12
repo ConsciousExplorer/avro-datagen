@@ -39,6 +39,7 @@ Avro logical types produce semantically meaningful values:
 | `timestamp-micros` | `long` | Epoch microseconds |
 | `iso-timestamp` | `string` | ISO 8601 string |
 | `date` | `int` | Days since epoch |
+| `decimal` | `bytes` / `fixed` | Decimal string respecting `precision` and `scale` |
 
 ```json
 {
