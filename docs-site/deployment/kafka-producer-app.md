@@ -79,27 +79,33 @@ COPY schemas/ schemas/
 
 RUN pip install uv && uv sync --extra kafka --no-dev --frozen
 
-CMD ["uv", "run", "python", "-m", "avro_datagen.produce"]
+CMD ["uv", "run", "python", "-c", "from avro_datagen.producer import produce; produce(...)"]
 ```
 
-> **Note:** The `produce` command does not exist yet. It will be a new module
-> that uses `confluent-kafka` to produce generated records to a Kafka topic.
-> The `confluent-kafka` dependency is already declared as an optional extra.
+> **Note:** There is no standalone `produce` CLI command. The producer module
+> (`avro_datagen.producer`) exists and is used by the Streamlit UI, but for
+> containerised deployments you would write a small Python entrypoint script
+> or use the pipe approach with `kcat`.
 
-## What the produce command would do
+## Using the producer module programmatically
 
 ```python
-# Pseudocode — not yet implemented
-from confluent_kafka import Producer
-from avro_datagen import generate
+from avro_datagen.producer import build_producer_config, produce
 
-producer = Producer({"bootstrap.servers": os.environ["KAFKA_BOOTSTRAP_SERVERS"]})
-topic = os.environ["KAFKA_TOPIC"]
+config = build_producer_config(
+    bootstrap_servers="kafka:9092",
+    acks="all",
+    compression_type="snappy",
+)
 
-for record in generate(schema_path, count=0):
-    producer.produce(topic, json.dumps(record).encode())
-    producer.poll(0)
-    time.sleep(1 / rate)  # throttle to target rate
+result = produce(
+    schema_path="schemas/transaction.avsc",
+    topic="txn.raw.v1",
+    producer_config=config,
+    count=1000,
+    rate=10,
+)
+print(f"Produced {result['produced']}, errors: {result['errors']}")
 ```
 
 ## Streamlit UI producer (interactive testing)

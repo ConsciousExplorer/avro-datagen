@@ -133,16 +133,19 @@ Custom properties go on the **field object** (sibling to `name` and `type`):
 }
 ```
 
-### Proposed `arg.properties` vocabulary
+### `arg.properties` vocabulary
 
 | Key | Value type | Meaning |
 |-----|-----------|---------|
-| `options` | `string[]` | Pick a random element (duplicates = weighting) |
-| `range` | `{min, max}` | Numeric range for generation |
+| `options` | `any[]` | Pick a random element (duplicates = weighting) |
+| `range` | `{min, max}` | Numeric or timestamp range |
 | `pool` | `int` | Pre-generate N unique values, reuse across records |
-| `pattern` | `string` | Regex or Faker-compatible format string |
-| `faker` | `string` | Explicit Faker method name (e.g. `"date_time_between"`) |
-| `faker_args` | `object` | Kwargs passed to the Faker method |
+| `pattern` | `string` | Regex-like string generation |
+| `faker` | `string \| dict` | Faker provider — string for simple, dict for `{method, args, kwargs, locale}` |
+| `ref` | `string` | Copy value from another field (with type conversion) |
+| `template` | `string` | String interpolation using `{fieldName}` syntax |
+| `rules` | `list` | Conditional generation based on other field values |
+| `null_probability` | `float` | Null frequency for union types (default 0.2) |
 
 ## Complete schema example
 
@@ -203,8 +206,7 @@ Custom properties go on the **field object** (sibling to `name` and `type`):
       "name": "timestamp",
       "type": {"type": "long", "logicalType": "timestamp-millis"},
       "arg.properties": {
-        "faker": "date_time_between",
-        "faker_args": {"start_date": "-30d", "end_date": "now"}
+        "range": {"min": "-30d", "max": "now"}
       }
     }
   ]

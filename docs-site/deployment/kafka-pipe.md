@@ -1,6 +1,6 @@
 # Piping generated data to Kafka
 
-This approach uses the `avro_datagen` CLI to generate JSON lines and pipes
+This approach uses the `avro-datagen` CLI to generate JSON lines and pipes
 them into a Kafka console producer. No Python Kafka client needed — just the
 CLI and a running Kafka broker.
 
@@ -9,7 +9,7 @@ CLI and a running Kafka broker.
 ```
 ┌──────────────┐   stdout    ┌──────────────────────┐         ┌─────────────┐
 │              │   (pipe)    │ kafka-console-        │         │             │
-│avro_datagen├────────────>│ producer              ├────────>│ Kafka topic │
+│avro-datagen├────────────>│ producer              ├────────>│ Kafka topic │
 │              │  JSON lines │ (runs in container)   │         │             │
 └──────────────┘             └──────────────────────┘         └─────────────┘
 ```
@@ -50,7 +50,7 @@ docker compose up -d kafka
 ### 2. Create the topic
 
 ```bash
-docker compose exec txn-kafka \
+docker compose exec kafka \
   kafka-topics --create \
     --topic txn.raw \
     --bootstrap-server kafka:9092 \
@@ -64,8 +64,8 @@ docker compose exec txn-kafka \
 
 ```bash
 # Generate 100 transactions and produce to Kafka
-avro_datagen -s schemas/transaction.avsc -c 100 -r 1 \
-  | docker exec -i txn-kafka /opt/kafka/bin/kafka-console-producer.sh \
+avro-datagen -s schemas/transaction.avsc -c 100 -r 1 \
+  | docker exec -i kafka /opt/kafka/bin/kafka-console-producer.sh \
         --topic txn.raw \
         --bootstrap-server kafka:9092
 ```
@@ -73,8 +73,8 @@ avro_datagen -s schemas/transaction.avsc -c 100 -r 1 \
 **Infinite mode** (Ctrl+C to stop):
 
 ```bash
-avro_datagen -s schemas/transaction.avsc -c 0 \
-  | docker exec txn-kafka \
+avro-datagen -s schemas/transaction.avsc -c 0 \
+  | docker exec kafka \
       kafka-console-producer \
         --topic txn.raw \
         --bootstrap-server kafka:9092
@@ -93,26 +93,19 @@ docker compose exec kafka \
     --max-messages 5
 ```
 
-## Rate limiting with pv
+## Rate limiting
 
-The generator currently emits records as fast as it can. To throttle without
-code changes, use `pv` (pipe viewer) to limit throughput:
+Use the `--rate` flag to control records per second:
 
 ```bash
-# ~10 records/second (assuming ~300 bytes per JSON line)
-avro_datagen -s schemas/transaction.avsc -c 0 \
-  | pv -L 3000 \
+avro-datagen -s schemas/transaction.avsc -c 0 --rate 10 \
   | docker compose exec -T kafka \
       kafka-console-producer \
         --topic txn.raw \
         --bootstrap-server kafka:9092
 ```
 
-`pv -L 3000` limits the pipe to 3000 bytes/second. Adjust based on your
-average record size. This is a rough workaround — a proper `--rate` CLI flag
-would give precise control.
-
-Install pv: `brew install pv` (macOS) or `apt install pv` (Linux).
+This produces 10 records per second. Omit `--rate` for maximum throughput.
 
 ## Using kcat (kafkacat) instead
 
@@ -120,7 +113,7 @@ Install pv: `brew install pv` (macOS) or `apt install pv` (Linux).
 
 ```bash
 # Install: brew install kcat
-avro_datagen -s schemas/transaction.avsc -c 100 \
+avro-datagen -s schemas/transaction.avsc -c 100 \
   | kcat -P -b localhost:9093 -t txn.raw
 ```
 
@@ -128,7 +121,7 @@ avro_datagen -s schemas/transaction.avsc -c 100 \
 
 ```bash
 # Always produces the same 50 records
-avro_datagen -s schemas/transaction.avsc -c 50 --seed 42 \
+avro-datagen -s schemas/transaction.avsc -c 50 --seed 42 \
   | kcat -P -b localhost:9093 -t txn.raw
 ```
 
@@ -140,7 +133,7 @@ topic.
 |                        | Pipe approach                | Python producer app                      |
 | ---------------------- | ---------------------------- | ---------------------------------------- |
 | **Dependencies**       | None (CLI + Kafka container) | `confluent-kafka`                        |
-| **Rate control**       | Rough (`pv`)                 | Precise (`--rate` flag)                  |
+| **Rate control**       | `--rate` flag                | `--rate` flag + producer tuning          |
 | **Error handling**     | None — pipe breaks silently  | Delivery callbacks, retries              |
 | **Idempotent produce** | No                           | Yes (`enable.idempotence=true`)          |
 | **Headers**            | Not possible                 | Can set `correlationId` in Kafka headers |

@@ -73,5 +73,6 @@ nav:
       - Pipe to Kafka: deployment/kafka-pipe.md
       - Kafka Producer App: deployment/kafka-producer-app.md
       - Streamlit UI: deployment/streamlit-ui.md
+  - How It Works: how-it-works.md
   - API Reference: api.md
   - Design: design.md
