@@ -181,6 +181,65 @@ Produces strings like `ABK-3847`, `QWE-0012`.
 Malformed patterns raise a clear `ValueError`. For more complex generation
 needs, use the `faker` hint with a provider like `bothify` or `pystr_format`.
 
+## foreign_key
+
+Pick a value from another schema's output file. Useful for generating
+related records across multiple runs -- e.g. orders that reference real
+customer IDs from a previously generated customers file.
+
+```json
+{
+  "name": "customerId",
+  "type": {"type": "string", "logicalType": "uuid"},
+  "arg.properties": {
+    "foreign_key": {
+      "file": "customers.jsonl",
+      "field": "customerId"
+    }
+  }
+}
+```
+
+### Workflow
+
+```bash
+# 1. Generate customers and save to file
+avro-datagen -s customers.avsc -c 100 > customers.jsonl
+
+# 2. Generate orders that reference those customers
+avro-datagen -s orders.avsc -c 1000 > orders.jsonl
+```
+
+Every order's `customerId` field will be a real value drawn from the
+`customers.jsonl` file. The file is loaded once (lazily on first use) and
+cached on the resolver.
+
+### File formats
+
+Both **JSON Lines** (one record per line) and **JSON arrays** are supported:
+
+```
+{"customerId": "cust-1", "name": "Alice"}
+{"customerId": "cust-2", "name": "Bob"}
+```
+
+```json
+[
+  {"customerId": "cust-1", "name": "Alice"},
+  {"customerId": "cust-2", "name": "Bob"}
+]
+```
+
+### Errors
+
+- Missing file: raises `FileNotFoundError` with the offending path
+- Missing `file` or `field` key: raises `ValueError`
+- File has no records with the named field: raises `ValueError`
+
+!!! tip "Reproducibility"
+    `foreign_key` works with `--seed` -- which value gets picked is
+    deterministic, but the source file must exist at generation time.
+
 ## ref
 
 Copy a value from another field. Supports type conversion.

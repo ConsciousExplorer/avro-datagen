@@ -137,3 +137,9 @@ Records can contain other records:
 
 See [length hints](arg-properties.md#length-arrays-and-maps) for all supported
 forms (`min_length`/`max_length`, `length: {min, max}`, or a fixed integer).
+
+## Cross-schema references
+
+For parent-child relationships across schemas (e.g. orders referencing real
+customer IDs), use the [`foreign_key`](arg-properties.md#foreign_key) hint
+to pick values from another schema's output file.

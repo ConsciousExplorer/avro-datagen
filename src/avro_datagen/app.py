@@ -546,6 +546,9 @@ if schema_dict:
                         hints_used.append(f"faker: {spec}")
                     else:
                         hints_used.append(f"faker: {spec.get('method', '?')}")
+                if "foreign_key" in props:
+                    fk = props["foreign_key"]
+                    hints_used.append(f"foreign_key: {fk.get('file', '?')}#{fk.get('field', '?')}")
                 if "options" in props:
                     opts = props["options"]
                     preview = ", ".join(str(o) for o in opts[:4])

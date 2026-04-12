@@ -417,6 +417,133 @@ class TestRange:
         assert thirty_days_ago_ms - 1000 <= record["ts"] <= now_ms + 1000
 
 
+class TestForeignKey:
+    def test_foreign_key_from_jsonl_file(self, tmp_path):
+        """foreign_key picks values from a JSON Lines file."""
+        source = tmp_path / "customers.jsonl"
+        source.write_text(
+            '{"customerId": "cust-1", "name": "Alice"}\n'
+            '{"customerId": "cust-2", "name": "Bob"}\n'
+            '{"customerId": "cust-3", "name": "Carol"}\n'
+        )
+        schema = {
+            "type": "record",
+            "name": "Order",
+            "fields": [
+                {
+                    "name": "customerId",
+                    "type": "string",
+                    "arg.properties": {"foreign_key": {"file": str(source), "field": "customerId"}},
+                },
+            ],
+        }
+        random.seed(42)
+        resolver = RecordResolver(schema)
+        values = {resolver.generate()["customerId"] for _ in range(50)}
+        assert values.issubset({"cust-1", "cust-2", "cust-3"})
+        # With 50 draws we should see at least 2 distinct values
+        assert len(values) >= 2
+
+    def test_foreign_key_from_json_array(self, tmp_path):
+        """foreign_key also reads JSON arrays."""
+        source = tmp_path / "customers.json"
+        source.write_text('[{"id": "a"}, {"id": "b"}, {"id": "c"}]')
+        schema = {
+            "type": "record",
+            "name": "Order",
+            "fields": [
+                {
+                    "name": "ref",
+                    "type": "string",
+                    "arg.properties": {"foreign_key": {"file": str(source), "field": "id"}},
+                },
+            ],
+        }
+        random.seed(42)
+        resolver = RecordResolver(schema)
+        values = {resolver.generate()["ref"] for _ in range(30)}
+        assert values.issubset({"a", "b", "c"})
+
+    def test_foreign_key_file_loaded_once(self, tmp_path):
+        """File is cached after first read (side effect: we can delete the file)."""
+        source = tmp_path / "customers.jsonl"
+        source.write_text('{"id": "x"}\n{"id": "y"}\n')
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "ref",
+                    "type": "string",
+                    "arg.properties": {"foreign_key": {"file": str(source), "field": "id"}},
+                },
+            ],
+        }
+        random.seed(42)
+        resolver = RecordResolver(schema)
+        # First generation loads the file
+        first = resolver.generate()["ref"]
+        assert first in ("x", "y")
+        # Delete the file; subsequent generations should still work from cache
+        source.unlink()
+        for _ in range(20):
+            assert resolver.generate()["ref"] in ("x", "y")
+
+    def test_foreign_key_missing_file_raises(self, tmp_path):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "ref",
+                    "type": "string",
+                    "arg.properties": {
+                        "foreign_key": {
+                            "file": str(tmp_path / "nonexistent.jsonl"),
+                            "field": "id",
+                        }
+                    },
+                },
+            ],
+        }
+        with pytest.raises(FileNotFoundError):
+            RecordResolver(schema).generate()
+
+    def test_foreign_key_missing_field_raises(self):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "ref",
+                    "type": "string",
+                    "arg.properties": {"foreign_key": {"file": "some.jsonl"}},
+                },
+            ],
+        }
+        with pytest.raises(ValueError, match="both 'file' and 'field'"):
+            RecordResolver(schema).generate()
+
+    def test_foreign_key_empty_file_raises(self, tmp_path):
+        source = tmp_path / "empty.jsonl"
+        source.write_text('{"other": "value"}\n')  # no matching field
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "ref",
+                    "type": "string",
+                    "arg.properties": {
+                        "foreign_key": {"file": str(source), "field": "missing_field"}
+                    },
+                },
+            ],
+        }
+        with pytest.raises(ValueError, match="no values"):
+            RecordResolver(schema).generate()
+
+
 class TestPool:
     def test_pool_reuses_values(self):
         schema = {

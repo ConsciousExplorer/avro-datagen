@@ -48,6 +48,7 @@ _KNOWN_HINT_KEYS = {
     "max_length",
     "items",
     "keys",
+    "foreign_key",
 }
 
 _KNOWN_CONDITION_KEYS = {

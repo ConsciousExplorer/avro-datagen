@@ -48,6 +48,8 @@ class RecordResolver:
         self._indexnamed_types(schema)
         # Cache for locale-specific Faker instances (seeded consistently)
         self._locale_fakers: dict[str, Faker] = {}
+        # Cache for foreign key source files: (path, field) -> list of values
+        self._fk_cache: dict[tuple[str, str], list[Any]] = {}
 
     def _indexnamed_types(self, schema: dict) -> None:
         """Walk the schema and index all named record types for reference."""
@@ -212,6 +214,10 @@ class RecordResolver:
         if "faker" in props:
             return self._resolve_faker(props["faker"])
 
+        # foreign_key: pick a value from another schema's output file
+        if "foreign_key" in props:
+            return self._resolve_foreign_key(props["foreign_key"])
+
         # options: pick a random element
         if "options" in props:
             return random.choice(props["options"])
@@ -230,6 +236,56 @@ class RecordResolver:
 
         # length hint for arrays is handled in _resolve_type
         return self._resolve_type(avro_type, props, record)
+
+    def _resolve_foreign_key(self, spec: dict) -> Any:
+        """Pick a value from another schema's JSON-lines output file.
+
+        spec is a dict with:
+          - file: path to a .jsonl or .json file produced by a previous run
+          - field: name of the field to pick from (required)
+
+        The file is loaded lazily on first access and cached on the resolver
+        instance. Both JSON Lines (one record per line) and a single JSON
+        array are supported.
+        """
+        file_path = spec.get("file")
+        field_name = spec.get("field")
+        if not file_path or not field_name:
+            raise ValueError("foreign_key requires both 'file' and 'field'")
+
+        cache_key = (str(file_path), field_name)
+        if cache_key not in self._fk_cache:
+            self._fk_cache[cache_key] = self._load_foreign_key_values(file_path, field_name)
+
+        values = self._fk_cache[cache_key]
+        if not values:
+            raise ValueError(
+                f"foreign_key source {file_path!r} has no values for field {field_name!r}"
+            )
+        return random.choice(values)
+
+    def _load_foreign_key_values(self, file_path: str, field_name: str) -> list[Any]:
+        """Load values from a JSON Lines or JSON array file."""
+        path = Path(file_path)
+        if not path.exists():
+            raise FileNotFoundError(f"foreign_key source file not found: {file_path}")
+
+        text = path.read_text(encoding="utf-8").strip()
+        if not text:
+            return []
+
+        records: list[Any]
+        # Try JSON array first, fall back to JSON Lines
+        if text.startswith("["):
+            records = json.loads(text)
+        else:
+            records = [json.loads(line) for line in text.splitlines() if line.strip()]
+
+        values = []
+        for rec in records:
+            if isinstance(rec, dict) and field_name in rec:
+                values.append(rec[field_name])
+        return values
 
     def _resolve_pool(self, avro_type: AvroType, props: dict) -> Any:
         """Return a value from a pre-generated pool, creating it if needed."""
