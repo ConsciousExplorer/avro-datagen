@@ -73,6 +73,47 @@ Supported offsets:
 | `"-60s"` | 60 seconds ago |
 | `1704067200` | Literal epoch seconds |
 
+### Dates
+
+For `date` logical type fields, `range` accepts ISO date strings or relative
+day offsets:
+
+```json
+{
+  "name": "birthDate",
+  "type": { "type": "int", "logicalType": "date" },
+  "arg.properties": { "range": { "min": "1960-01-01", "max": "2005-12-31" } }
+}
+```
+
+| Value | Meaning |
+|-------|---------|
+| `"today"` | Current day |
+| `"-30d"` | 30 days ago |
+| `"+7d"` | 7 days from today |
+| `"2024-01-15"` | Literal ISO date |
+| `19723` | Literal days since epoch |
+
+### Times of day
+
+For `time-millis` and `time-micros` logical type fields, `range` accepts
+`HH:MM` or `HH:MM:SS` strings:
+
+```json
+{
+  "name": "shiftStart",
+  "type": { "type": "int", "logicalType": "time-millis" },
+  "arg.properties": { "range": { "min": "09:00", "max": "17:30" } }
+}
+```
+
+| Value | Meaning |
+|-------|---------|
+| `"09:00"` | 9:00:00.000 |
+| `"17:30:45"` | 5:30:45 PM |
+| `"23:59:59.999"` | One ms before midnight |
+| `32400000` | Literal milliseconds after midnight |
+
 ## pool
 
 Pre-generate N unique values and reuse them across records. Useful for
