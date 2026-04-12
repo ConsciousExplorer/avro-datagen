@@ -29,6 +29,31 @@ Generate a value within bounds. Works for numeric types and timestamps.
 
 Integer types produce integers; float/double types produce 2-decimal floats.
 
+### Decimal
+
+For fields with `logicalType: decimal`, `range` produces a decimal string that
+respects the schema's `scale`:
+
+```json
+{
+  "name": "price",
+  "type": {
+    "type": "bytes",
+    "logicalType": "decimal",
+    "precision": 10,
+    "scale": 2
+  },
+  "arg.properties": { "range": { "min": 10.0, "max": 500.0 } }
+}
+```
+
+Produces values like `"47.82"`, `"213.05"`, `"499.99"`. The output is a string
+because JSON has no native decimal type — consumers should parse with
+`Decimal(value)` (Python) or equivalent to preserve precision.
+
+Without a `range` hint, decimals are generated across the full precision/scale
+range (e.g. precision=5, scale=2 -> values between `0.00` and `999.99`).
+
 ### Timestamps
 
 ```json
@@ -48,6 +73,47 @@ Supported offsets:
 | `"-60s"` | 60 seconds ago |
 | `1704067200` | Literal epoch seconds |
 
+### Dates
+
+For `date` logical type fields, `range` accepts ISO date strings or relative
+day offsets:
+
+```json
+{
+  "name": "birthDate",
+  "type": { "type": "int", "logicalType": "date" },
+  "arg.properties": { "range": { "min": "1960-01-01", "max": "2005-12-31" } }
+}
+```
+
+| Value | Meaning |
+|-------|---------|
+| `"today"` | Current day |
+| `"-30d"` | 30 days ago |
+| `"+7d"` | 7 days from today |
+| `"2024-01-15"` | Literal ISO date |
+| `19723` | Literal days since epoch |
+
+### Times of day
+
+For `time-millis` and `time-micros` logical type fields, `range` accepts
+`HH:MM` or `HH:MM:SS` strings:
+
+```json
+{
+  "name": "shiftStart",
+  "type": { "type": "int", "logicalType": "time-millis" },
+  "arg.properties": { "range": { "min": "09:00", "max": "17:30" } }
+}
+```
+
+| Value | Meaning |
+|-------|---------|
+| `"09:00"` | 9:00:00.000 |
+| `"17:30:45"` | 5:30:45 PM |
+| `"23:59:59.999"` | One ms before midnight |
+| `32400000` | Literal milliseconds after midnight |
+
 ## pool
 
 Pre-generate N unique values and reuse them across records. Useful for
@@ -66,7 +132,8 @@ every record. Creates realistic cardinality.
 
 ## pattern
 
-Regex-like string generation. Supports character classes and repetition.
+Regex-like string generation. Supports character classes, shortcuts,
+quantifiers, alternation, and escape sequences.
 
 ```json
 "arg.properties": {
@@ -76,15 +143,102 @@ Regex-like string generation. Supports character classes and repetition.
 
 Produces strings like `ABK-3847`, `QWE-0012`.
 
-Supported syntax:
+### Supported syntax
 
 | Pattern | Generates |
 |---------|-----------|
-| `[A-Z]` | One uppercase letter |
-| `[a-z]` | One lowercase letter |
-| `[0-9]` | One digit |
-| `{N}` | Repeat previous class N times |
+| `[A-Z]`, `[a-z]`, `[0-9]` | Character classes |
+| `[^0-9]` | Negated class (any char except digits) |
+| `\d`, `\w`, `\s` | Digit, word char, whitespace shortcuts |
+| `\D`, `\W`, `\S` | Negated shortcuts |
+| `{n}` | Exact repetition |
+| `{n,m}` | Variable repetition (n to m) |
+| `?` | Optional (0 or 1) |
+| `*` | Zero or more (capped at 5) |
+| `+` | One or more (capped at 5) |
+| `(foo\|bar\|baz)` | Alternation — picks one alternative |
+| `\.`, `\(`, `\\` | Escaped literals |
 | Literal chars | Used as-is |
+
+### Examples
+
+| Pattern | Example output |
+|---------|---------------|
+| `[A-Z]{3}-[0-9]{4}` | `ABK-3847` |
+| `exist-[A-Z]{3}` | `exist-QWE` |
+| `\d{3}-\w{4}` | `847-ab_3` |
+| `[a-z]{3,6}` | `foobar` or `xy` or `abcdef` |
+| `(foo\|bar)-\d+` | `foo-123`, `bar-4` |
+| `user_[a-z]{6}@example\.com` | `user_abcdef@example.com` |
+
+### Not supported
+
+- Anchors (`^`, `$`)
+- Lookaheads / lookbehinds
+- Backreferences
+- Nested groups
+
+Malformed patterns raise a clear `ValueError`. For more complex generation
+needs, use the `faker` hint with a provider like `bothify` or `pystr_format`.
+
+## foreign_key
+
+Pick a value from another schema's output file. Useful for generating
+related records across multiple runs -- e.g. orders that reference real
+customer IDs from a previously generated customers file.
+
+```json
+{
+  "name": "customerId",
+  "type": {"type": "string", "logicalType": "uuid"},
+  "arg.properties": {
+    "foreign_key": {
+      "file": "customers.jsonl",
+      "field": "customerId"
+    }
+  }
+}
+```
+
+### Workflow
+
+```bash
+# 1. Generate customers and save to file
+avro-datagen -s customers.avsc -c 100 > customers.jsonl
+
+# 2. Generate orders that reference those customers
+avro-datagen -s orders.avsc -c 1000 > orders.jsonl
+```
+
+Every order's `customerId` field will be a real value drawn from the
+`customers.jsonl` file. The file is loaded once (lazily on first use) and
+cached on the resolver.
+
+### File formats
+
+Both **JSON Lines** (one record per line) and **JSON arrays** are supported:
+
+```
+{"customerId": "cust-1", "name": "Alice"}
+{"customerId": "cust-2", "name": "Bob"}
+```
+
+```json
+[
+  {"customerId": "cust-1", "name": "Alice"},
+  {"customerId": "cust-2", "name": "Bob"}
+]
+```
+
+### Errors
+
+- Missing file: raises `FileNotFoundError` with the offending path
+- Missing `file` or `field` key: raises `ValueError`
+- File has no records with the named field: raises `ValueError`
+
+!!! tip "Reproducibility"
+    `foreign_key` works with `--seed` -- which value gets picked is
+    deterministic, but the source file must exist at generation time.
 
 ## ref
 
@@ -137,8 +291,15 @@ Conditional generation based on other field values.
 | Operator | Example | Matches when |
 |----------|---------|-------------|
 | `equals` | `{ "field": "type", "equals": "credit" }` | Field value equals the given value |
+| `not_equals` | `{ "field": "type", "not_equals": "credit" }` | Field value does not equal the given value |
 | `is_null` | `{ "field": "notes", "is_null": true }` | Field value is / is not null |
 | `in` | `{ "field": "status", "in": ["active", "pending"] }` | Field value is in the list |
+| `not_in` | `{ "field": "country", "not_in": ["US", "CA"] }` | Field value is not in the list |
+| `gt` | `{ "field": "amount", "gt": 1000 }` | Field value is greater than the given value |
+| `gte` | `{ "field": "age", "gte": 18 }` | Field value is greater than or equal |
+| `lt` | `{ "field": "score", "lt": 50 }` | Field value is less than the given value |
+| `lte` | `{ "field": "age", "lte": 17 }` | Field value is less than or equal |
+| `matches` | `{ "field": "code", "matches": "^[A-Z]-\\d+$" }` | Field value matches the regex |
 
 ### `then` clause
 
@@ -173,6 +334,38 @@ Control how often a nullable union field produces null. Default is `0.2` (20%).
 Only applies to union types that include `"null"`. For unions with multiple
 non-null branches (e.g. `["null", "string", "int"]`), a non-null branch is
 chosen at random when the value is not null.
+
+## length (arrays and maps)
+
+Control the size of generated arrays and maps. Three forms are accepted:
+
+### Flat min/max (preferred)
+
+```json
+{
+  "name": "tags",
+  "type": { "type": "array", "items": "string" },
+  "arg.properties": { "min_length": 2, "max_length": 5 }
+}
+```
+
+Either bound is optional — omitted bounds default to `1` and `5`.
+
+### Nested length dict
+
+```json
+"arg.properties": { "length": { "min": 2, "max": 5 } }
+```
+
+### Fixed length
+
+```json
+"arg.properties": { "length": 3 }
+```
+
+Produces arrays with exactly 3 elements every time.
+
+The same hints work for map types.
 
 ## faker
 

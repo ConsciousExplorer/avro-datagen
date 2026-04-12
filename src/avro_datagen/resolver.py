@@ -11,7 +11,7 @@ import random
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from faker import Faker
 
@@ -48,6 +48,8 @@ class RecordResolver:
         self._indexnamed_types(schema)
         # Cache for locale-specific Faker instances (seeded consistently)
         self._locale_fakers: dict[str, Faker] = {}
+        # Cache for foreign key source files: (path, field) -> list of values
+        self._fk_cache: dict[tuple[str, str], list[Any]] = {}
 
     def _indexnamed_types(self, schema: dict) -> None:
         """Walk the schema and index all named record types for reference."""
@@ -112,18 +114,39 @@ class RecordResolver:
         return self._resolve_type(avro_type, {}, record)
 
     def _evaluate_condition(self, condition: dict, record: dict) -> bool:
-        """Evaluate a single condition against the current record."""
+        """Evaluate a single condition against the current record.
+
+        Supported operators:
+          equals, not_equals, is_null, in, not_in,
+          gt, gte, lt, lte, matches (regex)
+        """
         field_name = condition["field"]
         field_value = record.get(field_name)
 
         if "equals" in condition:
             return field_value == condition["equals"]
+        if "not_equals" in condition:
+            return field_value != condition["not_equals"]
         if "is_null" in condition:
             if condition["is_null"]:
                 return field_value is None
             return field_value is not None
         if "in" in condition:
             return field_value in condition["in"]
+        if "not_in" in condition:
+            return field_value not in condition["not_in"]
+        if "gt" in condition:
+            return field_value is not None and field_value > condition["gt"]
+        if "gte" in condition:
+            return field_value is not None and field_value >= condition["gte"]
+        if "lt" in condition:
+            return field_value is not None and field_value < condition["lt"]
+        if "lte" in condition:
+            return field_value is not None and field_value <= condition["lte"]
+        if "matches" in condition:
+            if not isinstance(field_value, str):
+                return False
+            return re.match(condition["matches"], field_value) is not None
         return False
 
     def _resolve_ref(self, ref_name: str, avro_type: AvroType, record: dict) -> Any:
@@ -191,6 +214,10 @@ class RecordResolver:
         if "faker" in props:
             return self._resolve_faker(props["faker"])
 
+        # foreign_key: pick a value from another schema's output file
+        if "foreign_key" in props:
+            return self._resolve_foreign_key(props["foreign_key"])
+
         # options: pick a random element
         if "options" in props:
             return random.choice(props["options"])
@@ -209,6 +236,56 @@ class RecordResolver:
 
         # length hint for arrays is handled in _resolve_type
         return self._resolve_type(avro_type, props, record)
+
+    def _resolve_foreign_key(self, spec: dict) -> Any:
+        """Pick a value from another schema's JSON-lines output file.
+
+        spec is a dict with:
+          - file: path to a .jsonl or .json file produced by a previous run
+          - field: name of the field to pick from (required)
+
+        The file is loaded lazily on first access and cached on the resolver
+        instance. Both JSON Lines (one record per line) and a single JSON
+        array are supported.
+        """
+        file_path = spec.get("file")
+        field_name = spec.get("field")
+        if not file_path or not field_name:
+            raise ValueError("foreign_key requires both 'file' and 'field'")
+
+        cache_key = (str(file_path), field_name)
+        if cache_key not in self._fk_cache:
+            self._fk_cache[cache_key] = self._load_foreign_key_values(file_path, field_name)
+
+        values = self._fk_cache[cache_key]
+        if not values:
+            raise ValueError(
+                f"foreign_key source {file_path!r} has no values for field {field_name!r}"
+            )
+        return random.choice(values)
+
+    def _load_foreign_key_values(self, file_path: str, field_name: str) -> list[Any]:
+        """Load values from a JSON Lines or JSON array file."""
+        path = Path(file_path)
+        if not path.exists():
+            raise FileNotFoundError(f"foreign_key source file not found: {file_path}")
+
+        text = path.read_text(encoding="utf-8").strip()
+        if not text:
+            return []
+
+        records: list[Any]
+        # Try JSON array first, fall back to JSON Lines
+        if text.startswith("["):
+            records = json.loads(text)
+        else:
+            records = [json.loads(line) for line in text.splitlines() if line.strip()]
+
+        values = []
+        for rec in records:
+            if isinstance(rec, dict) and field_name in rec:
+                values.append(rec[field_name])
+        return values
 
     def _resolve_pool(self, avro_type: AvroType, props: dict) -> Any:
         """Return a value from a pre-generated pool, creating it if needed."""
@@ -237,6 +314,29 @@ class RecordResolver:
                 return int(ts * 1_000_000)
             return epoch_ms
 
+        # Date range: ISO date strings ("2024-01-01") or "today"/"-30d"
+        if logical == "date":
+            start_days = self._parse_date_offset(range_spec["min"])
+            end_days = self._parse_date_offset(range_spec["max"])
+            return random.randint(start_days, end_days)
+
+        # Time range: ISO time strings ("09:00", "17:30:00") - produces ms or us after midnight
+        if logical in ("time-millis", "time-micros"):
+            start_ms = self._parse_time_of_day(range_spec["min"])
+            end_ms = self._parse_time_of_day(range_spec["max"])
+            ms = random.randint(start_ms, end_ms)
+            if logical == "time-micros":
+                return ms * 1000
+            return ms
+
+        # Decimal range: respect scale
+        if logical == "decimal":
+            scale = 0
+            if isinstance(avro_type, dict):
+                scale = avro_type.get("scale", 0)
+            value = random.uniform(float(range_spec["min"]), float(range_spec["max"]))
+            return f"{value:.{scale}f}"
+
         # Numeric range
         low = range_spec["min"]
         high = range_spec["max"]
@@ -245,39 +345,195 @@ class RecordResolver:
             return random.randint(int(low), int(high))
         return round(random.uniform(low, high), 2)
 
-    def _resolve_pattern(self, pattern: str) -> str:
-        """Generate a string from a simple regex-like pattern.
+    # Default cap for unbounded quantifiers (* and +). Keeps generated
+    # strings reasonable without users specifying bounds.
+    _UNBOUNDED_MAX = 5
 
-        Supports: [A-Z], [a-z], [0-9], {n} repetition, and literal chars.
-        Not a full regex engine — covers common data generation patterns.
+    # Built-in character class shortcuts (\d, \w, \s and their negations).
+    _SHORTCUT_CLASSES: ClassVar[dict[str, list[str]]] = {
+        "d": list("0123456789"),
+        "D": [chr(c) for c in range(32, 127) if not chr(c).isdigit()],
+        "w": list("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"),
+        "W": [chr(c) for c in range(32, 127) if not (chr(c).isalnum() or chr(c) == "_")],
+        "s": list(" \t"),
+        "S": [chr(c) for c in range(33, 127)],
+    }
+
+    def _resolve_pattern(self, pattern: str) -> str:
+        """Generate a string from a regex-like pattern.
+
+        Supported syntax:
+          - Character classes: [A-Z], [a-z], [0-9], [^0-9] (negation)
+          - Shortcuts: \\d, \\w, \\s, \\D, \\W, \\S
+          - Quantifiers: {n}, {n,m}, ?, *, +
+          - Groups with alternation: (foo|bar|baz)
+          - Escape sequences: \\., \\(, \\[, \\{, \\\\
+          - Any other literal char
+
+        Not a full regex engine — no anchors, lookaheads, backreferences.
+        Raises ValueError with a clear message on malformed patterns.
         """
-        result = []
-        i = 0
-        while i < len(pattern):
-            if pattern[i] == "[":
-                # Character class
-                end = pattern.index("]", i)
-                char_class = pattern[i + 1 : end]
-                i = end + 1
-                # Check for repetition {n}
-                count = 1
-                if i < len(pattern) and pattern[i] == "{":
-                    rep_end = pattern.index("}", i)
-                    count = int(pattern[i + 1 : rep_end])
-                    i = rep_end + 1
-                chars = self._expand_char_class(char_class)
-                for _ in range(count):
-                    result.append(random.choice(chars))
+        try:
+            return self._parse_pattern(pattern, 0, len(pattern))[0]
+        except (IndexError, ValueError, KeyError) as e:
+            raise ValueError(f"Invalid pattern {pattern!r}: {e}") from e
+
+    def _parse_pattern(self, pattern: str, start: int, end: int) -> tuple[str, int]:
+        """Parse pattern[start:end] and return (generated string, next index)."""
+        result: list[str] = []
+        i = start
+        while i < end:
+            # Alternation at group top level handled by caller via split
+            if pattern[i] == ")":
+                break
+            atom_fn, i = self._read_atom(pattern, i, end)
+            count, i = self._read_quantifier(pattern, i, end)
+            for _ in range(count):
+                result.append(atom_fn())
+        return "".join(result), i
+
+    def _read_atom(self, pattern: str, i: int, end: int):
+        """Read one atom starting at i. Return (callable producing one match, next index).
+
+        The callable returns a string — usually one character, but groups may
+        produce multi-char strings.
+        """
+        ch = pattern[i]
+
+        # Escape sequence
+        if ch == "\\":
+            if i + 1 >= end:
+                raise ValueError("Trailing backslash")
+            nxt = pattern[i + 1]
+            if nxt in self._SHORTCUT_CLASSES:
+                chars = self._SHORTCUT_CLASSES[nxt]
+                return (lambda c=chars: random.choice(c)), i + 2
+            # Escaped literal (\., \(, \\, etc.)
+            return (lambda c=nxt: c), i + 2
+
+        # Character class
+        if ch == "[":
+            close = pattern.find("]", i + 1)
+            if close == -1:
+                raise ValueError(f"Unmatched '[' at position {i}")
+            body = pattern[i + 1 : close]
+            negate = False
+            if body.startswith("^"):
+                negate = True
+                body = body[1:]
+            chars = self._expand_char_class(body)
+            if negate:
+                allowed = set(chars)
+                chars = [chr(c) for c in range(32, 127) if chr(c) not in allowed]
+            if not chars:
+                raise ValueError(f"Empty character class at position {i}")
+            return (lambda c=chars: random.choice(c)), close + 1
+
+        # Group with alternation
+        if ch == "(":
+            # Find matching ')' — no nested groups supported
+            depth = 1
+            j = i + 1
+            while j < end and depth > 0:
+                if pattern[j] == "\\" and j + 1 < end:
+                    j += 2
+                    continue
+                if pattern[j] == "(":
+                    depth += 1
+                elif pattern[j] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            if depth != 0:
+                raise ValueError(f"Unmatched '(' at position {i}")
+            body = pattern[i + 1 : j]
+            alternatives = self._split_alternatives(body)
+            if not alternatives:
+                raise ValueError(f"Empty group at position {i}")
+
+            def choose() -> str:
+                alt = random.choice(alternatives)
+                return self._parse_pattern(alt, 0, len(alt))[0]
+
+            return choose, j + 1
+
+        # Stray quantifier or closing bracket
+        if ch in "}])*+?|":
+            raise ValueError(f"Unexpected {ch!r} at position {i}")
+
+        # Literal character
+        return (lambda c=ch: c), i + 1
+
+    def _read_quantifier(self, pattern: str, i: int, end: int) -> tuple[int, int]:
+        """Read an optional quantifier. Returns (count, next index)."""
+        if i >= end:
+            return 1, i
+        ch = pattern[i]
+        if ch == "?":
+            return random.randint(0, 1), i + 1
+        if ch == "*":
+            return random.randint(0, self._UNBOUNDED_MAX), i + 1
+        if ch == "+":
+            return random.randint(1, self._UNBOUNDED_MAX), i + 1
+        if ch == "{":
+            close = pattern.find("}", i + 1)
+            if close == -1:
+                raise ValueError(f"Unmatched '{{' at position {i}")
+            body = pattern[i + 1 : close]
+            if "," in body:
+                low_s, high_s = body.split(",", 1)
+                low = int(low_s) if low_s else 0
+                high = int(high_s) if high_s else self._UNBOUNDED_MAX
             else:
-                result.append(pattern[i])
+                low = high = int(body)
+            if low > high:
+                raise ValueError(f"Invalid quantifier {{{body}}} at position {i}")
+            return random.randint(low, high), close + 1
+        return 1, i
+
+    def _split_alternatives(self, body: str) -> list[str]:
+        """Split a group body on top-level '|' characters."""
+        alternatives: list[str] = []
+        current: list[str] = []
+        i = 0
+        depth = 0
+        while i < len(body):
+            ch = body[i]
+            if ch == "\\" and i + 1 < len(body):
+                current.append(body[i : i + 2])
+                i += 2
+                continue
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            if ch == "|" and depth == 0:
+                alternatives.append("".join(current))
+                current = []
                 i += 1
-        return "".join(result)
+                continue
+            current.append(ch)
+            i += 1
+        alternatives.append("".join(current))
+        return alternatives
 
     def _expand_char_class(self, char_class: str) -> list[str]:
-        """Expand a character class like 'A-Z' or '0-9' to a list of chars."""
-        chars = []
+        """Expand a character class like 'A-Z' or '0-9' to a list of chars.
+
+        Handles backslash shortcuts (\\d, \\w, \\s) inside character classes.
+        """
+        chars: list[str] = []
         i = 0
         while i < len(char_class):
+            if char_class[i] == "\\" and i + 1 < len(char_class):
+                nxt = char_class[i + 1]
+                if nxt in self._SHORTCUT_CLASSES:
+                    chars.extend(self._SHORTCUT_CLASSES[nxt])
+                else:
+                    chars.append(nxt)
+                i += 2
+                continue
             if i + 2 < len(char_class) and char_class[i + 1] == "-":
                 start = ord(char_class[i])
                 end = ord(char_class[i + 2])
@@ -308,6 +564,8 @@ class RecordResolver:
                 return self._resolve_map(avro_type, props, record)
             if inner_type == "enum":
                 return random.choice(avro_type["symbols"])
+            if logical == "decimal":
+                return self._generate_decimal(avro_type)
             if logical:
                 return self._generate_for_logical(logical)
             # Fixed type
@@ -353,11 +611,29 @@ class RecordResolver:
         nested.now_ts = self.now_ts
         return nested.generate()
 
+    def _resolve_length(self, props: dict, default_min: int = 1, default_max: int = 5) -> int:
+        """Resolve a collection length from hints.
+
+        Accepts three forms (checked in order):
+          1. min_length / max_length (flat, preferred for new schemas)
+          2. length: {"min": ..., "max": ...} (nested form)
+          3. length: N (exact fixed length)
+        """
+        if "min_length" in props or "max_length" in props:
+            low = props.get("min_length", default_min)
+            high = props.get("max_length", default_max)
+            return random.randint(low, high)
+        length_spec = props.get("length")
+        if isinstance(length_spec, int):
+            return length_spec
+        if isinstance(length_spec, dict):
+            return random.randint(length_spec["min"], length_spec["max"])
+        return random.randint(default_min, default_max)
+
     def _resolve_array(self, schema: dict, props: dict, record: dict) -> list:
         """Resolve an array type."""
         items_type = schema["items"]
-        length_spec = props.get("length", {"min": 1, "max": 5})
-        length = random.randint(length_spec["min"], length_spec["max"])
+        length = self._resolve_length(props)
 
         items_props = props.get("items", {})
         result = []
@@ -371,8 +647,7 @@ class RecordResolver:
     def _resolve_map(self, schema: dict, props: dict, record: dict) -> dict:
         """Resolve a map type."""
         values_type = schema["values"]
-        length_spec = props.get("length", {"min": 1, "max": 5})
-        length = random.randint(length_spec["min"], length_spec["max"])
+        length = self._resolve_length(props)
 
         result = {}
         for i in range(length):
@@ -397,11 +672,36 @@ class RecordResolver:
         if logical == "iso-timestamp":
             return datetime.fromtimestamp(self.now_ts, tz=UTC).isoformat().replace("+00:00", "Z")
         if logical == "date":
-            return random.randint(0, 20000)
-        if logical in ("time-millis", "time-micros"):
-            return random.randint(0, 86_400_000)
+            # Days since epoch — random date in the last ~5 years
+            today_days = int(self.now_ts // 86400)
+            return random.randint(today_days - 1825, today_days)
+        if logical == "time-millis":
+            # Milliseconds after midnight (0 to 86_400_000)
+            return random.randint(0, 86_400_000 - 1)
+        if logical == "time-micros":
+            # Microseconds after midnight (0 to 86_400_000_000)
+            return random.randint(0, 86_400_000_000 - 1)
         # Unknown logical type — fall back to nothing useful
         return None
+
+    def _generate_decimal(self, avro_type: dict) -> str:
+        """Generate a decimal value as a string, respecting precision and scale.
+
+        Returned as a string since JSON has no native decimal type — consumers
+        should parse with Decimal(value) to preserve precision.
+        """
+        precision = avro_type.get("precision", 10)
+        scale = avro_type.get("scale", 0)
+        # Precision = total digits, scale = digits after decimal point
+        # Integer part can have at most (precision - scale) digits
+        int_digits = max(precision - scale, 1)
+        max_int = 10**int_digits - 1
+        integer_part = random.randint(0, max_int)
+        if scale > 0:
+            max_frac = 10**scale - 1
+            frac_part = random.randint(0, max_frac)
+            return f"{integer_part}.{frac_part:0{scale}d}"
+        return str(integer_part)
 
     def _generate_primitive(self, type_name: str) -> Any:
         """Generate a value for a primitive Avro type."""
@@ -459,3 +759,47 @@ class RecordResolver:
             delta = {"d": 86400, "h": 3600, "m": 60, "s": 1}[unit]
             return self.now_ts + amount * delta
         raise ValueError(f"Unrecognized time offset: {value!r}")
+
+    def _parse_date_offset(self, value: str | int) -> int:
+        """Parse a date value to days-since-epoch.
+
+        Accepts:
+          - int: already days since epoch
+          - "today": current day
+          - "-30d": relative offset in days
+          - "2024-01-15": ISO date string
+        """
+        today_days = int(self.now_ts // 86400)
+        if isinstance(value, int):
+            return value
+        if value == "today":
+            return today_days
+        # Relative day offset: -30d, +7d
+        match = re.match(r"^(-?\d+)d$", value)
+        if match:
+            return today_days + int(match.group(1))
+        # ISO date string: YYYY-MM-DD
+        try:
+            dt = datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=UTC)
+            return int(dt.timestamp() // 86400)
+        except ValueError as e:
+            raise ValueError(f"Unrecognized date value: {value!r}") from e
+
+    def _parse_time_of_day(self, value: str | int) -> int:
+        """Parse a time-of-day value to milliseconds after midnight.
+
+        Accepts:
+          - int: already milliseconds after midnight
+          - "HH:MM" or "HH:MM:SS" or "HH:MM:SS.fff": ISO time string
+        """
+        if isinstance(value, int):
+            return value
+        # Parse HH:MM[:SS[.fff]]
+        match = re.match(r"^(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$", value)
+        if not match:
+            raise ValueError(f"Unrecognized time-of-day value: {value!r}")
+        hours = int(match.group(1))
+        minutes = int(match.group(2))
+        seconds = int(match.group(3) or 0)
+        millis = int((match.group(4) or "0").ljust(3, "0"))
+        return hours * 3_600_000 + minutes * 60_000 + seconds * 1000 + millis

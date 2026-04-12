@@ -3,6 +3,11 @@
 Schemas are standard Avro `.avsc` files. The generator reads the schema and
 produces records by resolving each field in declaration order.
 
+!!! tip "Validate before generating"
+    Run `avro-datagen validate -s schema.avsc` to catch structural issues,
+    wrong logical type base types, broken `ref` targets, and unknown hint
+    keys before you generate any data.
+
 ## Minimal schema
 
 ```json
@@ -38,7 +43,14 @@ Avro logical types produce semantically meaningful values:
 | `timestamp-millis` | `long` | Epoch milliseconds |
 | `timestamp-micros` | `long` | Epoch microseconds |
 | `iso-timestamp` | `string` | ISO 8601 string |
-| `date` | `int` | Days since epoch |
+| `date` | `int` | Days since epoch (random date in last ~5 years) |
+| `time-millis` | `int` | Milliseconds after midnight |
+| `time-micros` | `long` | Microseconds after midnight |
+| `decimal` | `bytes` / `fixed` | Decimal string respecting `precision` and `scale` |
+
+All time-based types support `range` hints -- see the
+[arg.properties reference](arg-properties.md#range) for date and time-of-day
+ranges.
 
 ```json
 {
@@ -116,8 +128,18 @@ Records can contain other records:
   "name": "tags",
   "type": { "type": "array", "items": "string" },
   "arg.properties": {
-    "length": { "min": 1, "max": 3 },
+    "min_length": 1,
+    "max_length": 3,
     "items": { "options": ["urgent", "review", "flagged"] }
   }
 }
 ```
+
+See [length hints](arg-properties.md#length-arrays-and-maps) for all supported
+forms (`min_length`/`max_length`, `length: {min, max}`, or a fixed integer).
+
+## Cross-schema references
+
+For parent-child relationships across schemas (e.g. orders referencing real
+customer IDs), use the [`foreign_key`](arg-properties.md#foreign_key) hint
+to pick values from another schema's output file.

@@ -82,6 +82,7 @@ avro-datagen -s schemas/transaction.avsc -c 1000 \
 | Command | Description |
 |---------|-------------|
 | `avro-datagen generate` | Generate data to stdout (default) |
+| `avro-datagen validate` | Validate a schema and report issues |
 | `avro-datagen ui` | Launch the Streamlit web UI |
 
 Flags without a subcommand are treated as `generate` for backward
@@ -102,6 +103,24 @@ avro-datagen generate -s schema.avsc -c 10
 | `--seed` | | random | Seed for reproducible output |
 | `--rate` | `-r` | unlimited | Records per second |
 | `--pretty` | `-p` | off | Pretty-print JSON |
+
+### Validate
+
+Check a schema for structural errors (missing fields, wrong logical type
+bases, unknown hint keys, broken refs, etc.) before generating data:
+
+```bash
+avro-datagen validate -s schemas/transaction.avsc
+avro-datagen validate -s schemas/transaction.avsc --strict  # warnings fail too
+```
+
+Exits 0 if valid, 1 if errors are found. Warnings (unknown hint keys, unknown
+logical types) are reported but do not fail unless `--strict` is set.
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--schema` | `-s` | required | Path to `.avsc` file |
+| `--strict` | | off | Treat warnings as errors |
 
 ### UI flags
 

@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-12
+
+Significant feature release: 7 issues closed covering new logical types,
+expanded rules engine, full regex-like pattern support, schema validation,
+cross-schema references, and more.
+
+### Added
+
+- **Decimal logical type** (#1) — `decimal` is now generated as a string respecting `precision` and `scale`, with optional `range` hint for bounded values
+- **Comparison operators in rules engine** (#7) — new condition operators: `gt`, `gte`, `lt`, `lte`, `not_equals`, `not_in`, `matches` (regex)
+- **Schema validator** (#8) — new `avro_datagen.validator` module and `avro-datagen validate -s schema.avsc` CLI subcommand. Catches structural errors, bad logical type bases, decimal precision/scale issues, broken `ref` targets, rules referencing undeclared fields, and duplicate field names. Unknown hint keys and condition operators are reported as warnings.
+- **Cross-schema foreign keys** (#9) — new `foreign_key` arg.property that picks values from another schema's output JSON Lines or JSON array file. Supports `--seed` for reproducibility.
+- **Flexible array/map length hints** (#10) — new flat `min_length`/`max_length` and fixed integer `length: N` forms alongside the existing `length: {min, max}` dict form.
+- `validate()` and `SchemaValidationError` exposed from the `avro_datagen` package.
+
+### Changed
+
+- **Pattern engine rewritten** (#6) — now supports shortcut classes (`\d`, `\w`, `\s`, `\D`, `\W`, `\S`), negated classes (`[^0-9]`), range quantifiers (`{n,m}`), `?`, `*`, `+`, alternation (`(foo|bar|baz)`), and escape sequences (`\.`, `\(`, `\\`). Malformed patterns raise a clear `ValueError` instead of `IndexError`.
+- **Date and time logical types generate meaningful values** (#5) — `date` now produces a random day in the last ~5 years instead of a random int. `time-micros` correctly uses the full microsecond range. All date and time types now support `range` hints with ISO date strings (`"2024-01-15"`), relative offsets (`"-30d"`, `"today"`), and `HH:MM:SS` time strings.
+- 64 new tests across all changes (resolver, validator, pattern engine, foreign keys).
+
+## [0.2.7] - 2026-04-11
+
+Internal maintenance release.
+
+## [0.2.6] - 2026-04-11
+
+### Fixed
+
+- Union types now resolve all non-null branches (not just the first) and support a configurable `null_probability` hint.
+
 ## [0.2.5] - 2026-04-10
 
 ### Fixed
