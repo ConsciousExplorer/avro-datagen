@@ -116,8 +116,12 @@ Records can contain other records:
   "name": "tags",
   "type": { "type": "array", "items": "string" },
   "arg.properties": {
-    "length": { "min": 1, "max": 3 },
+    "min_length": 1,
+    "max_length": 3,
     "items": { "options": ["urgent", "review", "flagged"] }
   }
 }
 ```
+
+See [length hints](arg-properties.md#length-arrays-and-maps) for all supported
+forms (`min_length`/`max_length`, `length: {min, max}`, or a fixed integer).

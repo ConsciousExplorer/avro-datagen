@@ -353,11 +353,29 @@ class RecordResolver:
         nested.now_ts = self.now_ts
         return nested.generate()
 
+    def _resolve_length(self, props: dict, default_min: int = 1, default_max: int = 5) -> int:
+        """Resolve a collection length from hints.
+
+        Accepts three forms (checked in order):
+          1. min_length / max_length (flat, preferred for new schemas)
+          2. length: {"min": ..., "max": ...} (nested form)
+          3. length: N (exact fixed length)
+        """
+        if "min_length" in props or "max_length" in props:
+            low = props.get("min_length", default_min)
+            high = props.get("max_length", default_max)
+            return random.randint(low, high)
+        length_spec = props.get("length")
+        if isinstance(length_spec, int):
+            return length_spec
+        if isinstance(length_spec, dict):
+            return random.randint(length_spec["min"], length_spec["max"])
+        return random.randint(default_min, default_max)
+
     def _resolve_array(self, schema: dict, props: dict, record: dict) -> list:
         """Resolve an array type."""
         items_type = schema["items"]
-        length_spec = props.get("length", {"min": 1, "max": 5})
-        length = random.randint(length_spec["min"], length_spec["max"])
+        length = self._resolve_length(props)
 
         items_props = props.get("items", {})
         result = []
@@ -371,8 +389,7 @@ class RecordResolver:
     def _resolve_map(self, schema: dict, props: dict, record: dict) -> dict:
         """Resolve a map type."""
         values_type = schema["values"]
-        length_spec = props.get("length", {"min": 1, "max": 5})
-        length = random.randint(length_spec["min"], length_spec["max"])
+        length = self._resolve_length(props)
 
         result = {}
         for i in range(length):
