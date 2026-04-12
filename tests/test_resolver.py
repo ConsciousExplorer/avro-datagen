@@ -526,6 +526,180 @@ class TestRules:
             else:
                 assert record["greeting"] == "Hi Bob!"
 
+    def test_gt_condition(self):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "amount",
+                    "type": "int",
+                    "arg.properties": {"range": {"min": 0, "max": 2000}},
+                },
+                {
+                    "name": "tier",
+                    "type": "string",
+                    "arg.properties": {
+                        "rules": [
+                            {
+                                "when": {"field": "amount", "gt": 1000},
+                                "then": {"options": ["premium"]},
+                            },
+                            {
+                                "when": {"field": "amount", "lte": 1000},
+                                "then": {"options": ["standard"]},
+                            },
+                        ],
+                    },
+                },
+            ],
+        }
+        random.seed(42)
+        for _ in range(100):
+            record = RecordResolver(schema).generate()
+            if record["amount"] > 1000:
+                assert record["tier"] == "premium"
+            else:
+                assert record["tier"] == "standard"
+
+    def test_gte_lt_conditions(self):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "age",
+                    "type": "int",
+                    "arg.properties": {"range": {"min": 0, "max": 100}},
+                },
+                {
+                    "name": "category",
+                    "type": "string",
+                    "arg.properties": {
+                        "rules": [
+                            {
+                                "when": {"field": "age", "lt": 18},
+                                "then": {"options": ["minor"]},
+                            },
+                            {
+                                "when": {"field": "age", "gte": 18},
+                                "then": {"options": ["adult"]},
+                            },
+                        ],
+                    },
+                },
+            ],
+        }
+        random.seed(42)
+        for _ in range(100):
+            record = RecordResolver(schema).generate()
+            if record["age"] < 18:
+                assert record["category"] == "minor"
+            else:
+                assert record["category"] == "adult"
+
+    def test_not_equals_condition(self):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "status",
+                    "type": "string",
+                    "arg.properties": {"options": ["active", "inactive", "pending"]},
+                },
+                {
+                    "name": "label",
+                    "type": "string",
+                    "arg.properties": {
+                        "rules": [
+                            {
+                                "when": {"field": "status", "not_equals": "active"},
+                                "then": {"options": ["dormant"]},
+                            },
+                            {
+                                "when": {"field": "status", "equals": "active"},
+                                "then": {"options": ["live"]},
+                            },
+                        ],
+                    },
+                },
+            ],
+        }
+        random.seed(42)
+        for _ in range(50):
+            record = RecordResolver(schema).generate()
+            if record["status"] == "active":
+                assert record["label"] == "live"
+            else:
+                assert record["label"] == "dormant"
+
+    def test_not_in_condition(self):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "country",
+                    "type": "string",
+                    "arg.properties": {"options": ["US", "CA", "MX", "UK", "DE"]},
+                },
+                {
+                    "name": "region",
+                    "type": "string",
+                    "arg.properties": {
+                        "rules": [
+                            {
+                                "when": {"field": "country", "not_in": ["US", "CA", "MX"]},
+                                "then": {"options": ["EU"]},
+                            },
+                            {
+                                "when": {"field": "country", "in": ["US", "CA", "MX"]},
+                                "then": {"options": ["NA"]},
+                            },
+                        ],
+                    },
+                },
+            ],
+        }
+        random.seed(42)
+        for _ in range(50):
+            record = RecordResolver(schema).generate()
+            if record["country"] in ("US", "CA", "MX"):
+                assert record["region"] == "NA"
+            else:
+                assert record["region"] == "EU"
+
+    def test_matches_condition(self):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "code",
+                    "type": "string",
+                    "arg.properties": {"options": ["A-123", "B-456", "XYZ", "C-789"]},
+                },
+                {
+                    "name": "kind",
+                    "type": "string",
+                    "arg.properties": {
+                        "rules": [
+                            {
+                                "when": {"field": "code", "matches": r"^[A-Z]-\d+$"},
+                                "then": {"options": ["structured"]},
+                            },
+                        ],
+                    },
+                },
+            ],
+        }
+        random.seed(42)
+        for _ in range(50):
+            record = RecordResolver(schema).generate()
+            if record["code"] in ("A-123", "B-456", "C-789"):
+                assert record["kind"] == "structured"
+
 
 class TestUnion:
     def test_nullable_field_produces_both(self):

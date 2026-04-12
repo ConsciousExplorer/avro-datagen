@@ -112,18 +112,39 @@ class RecordResolver:
         return self._resolve_type(avro_type, {}, record)
 
     def _evaluate_condition(self, condition: dict, record: dict) -> bool:
-        """Evaluate a single condition against the current record."""
+        """Evaluate a single condition against the current record.
+
+        Supported operators:
+          equals, not_equals, is_null, in, not_in,
+          gt, gte, lt, lte, matches (regex)
+        """
         field_name = condition["field"]
         field_value = record.get(field_name)
 
         if "equals" in condition:
             return field_value == condition["equals"]
+        if "not_equals" in condition:
+            return field_value != condition["not_equals"]
         if "is_null" in condition:
             if condition["is_null"]:
                 return field_value is None
             return field_value is not None
         if "in" in condition:
             return field_value in condition["in"]
+        if "not_in" in condition:
+            return field_value not in condition["not_in"]
+        if "gt" in condition:
+            return field_value is not None and field_value > condition["gt"]
+        if "gte" in condition:
+            return field_value is not None and field_value >= condition["gte"]
+        if "lt" in condition:
+            return field_value is not None and field_value < condition["lt"]
+        if "lte" in condition:
+            return field_value is not None and field_value <= condition["lte"]
+        if "matches" in condition:
+            if not isinstance(field_value, str):
+                return False
+            return re.match(condition["matches"], field_value) is not None
         return False
 
     def _resolve_ref(self, ref_name: str, avro_type: AvroType, record: dict) -> Any:

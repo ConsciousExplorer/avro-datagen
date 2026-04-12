@@ -491,16 +491,33 @@ if schema_dict:
             if "rules" in props:
                 conditions = []
                 last_then = None
+                op_labels = {
+                    "equals": "=",
+                    "not_equals": "!=",
+                    "gt": ">",
+                    "gte": ">=",
+                    "lt": "<",
+                    "lte": "<=",
+                }
                 for rule in props["rules"]:
                     cond = rule.get("when", {})
                     ref_field = cond.get("field", "?")
-                    if "equals" in cond:
-                        conditions.append(f'{ref_field} = "{cond["equals"]}"')
-                    elif "in" in cond:
-                        conditions.append(f"{ref_field} in {cond['in']}")
-                    elif "is_null" in cond:
-                        null_str = "null" if cond["is_null"] else "not null"
-                        conditions.append(f"{ref_field} is {null_str}")
+                    matched = False
+                    for op, label in op_labels.items():
+                        if op in cond:
+                            conditions.append(f"{ref_field} {label} {cond[op]!r}")
+                            matched = True
+                            break
+                    if not matched:
+                        if "in" in cond:
+                            conditions.append(f"{ref_field} in {cond['in']}")
+                        elif "not_in" in cond:
+                            conditions.append(f"{ref_field} not in {cond['not_in']}")
+                        elif "is_null" in cond:
+                            null_str = "null" if cond["is_null"] else "not null"
+                            conditions.append(f"{ref_field} is {null_str}")
+                        elif "matches" in cond:
+                            conditions.append(f"{ref_field} matches /{cond['matches']}/")
                     last_then = rule.get("then")
                 if last_then is None:
                     hint = "null"
