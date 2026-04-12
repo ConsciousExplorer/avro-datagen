@@ -472,7 +472,10 @@ if schema_dict:
                 if inner == "map":
                     return f"map<string, {_describe_type(avro_type.get('values', '?'))}>"
                 if inner == "enum":
-                    return f"enum({', '.join(avro_type.get('symbols', [])[:4])}{'...' if len(avro_type.get('symbols', [])) > 4 else ''})"
+                    symbols = avro_type.get("symbols", [])
+                    preview = ", ".join(symbols[:4])
+                    suffix = "..." if len(symbols) > 4 else ""
+                    return f"enum({preview}{suffix})"
                 if inner == "record":
                     return f"record({avro_type.get('name', '?')})"
                 if inner == "fixed":
@@ -487,6 +490,7 @@ if schema_dict:
 
             if "rules" in props:
                 conditions = []
+                last_then = None
                 for rule in props["rules"]:
                     cond = rule.get("when", {})
                     ref_field = cond.get("field", "?")
@@ -495,14 +499,15 @@ if schema_dict:
                     elif "in" in cond:
                         conditions.append(f"{ref_field} in {cond['in']}")
                     elif "is_null" in cond:
-                        conditions.append(f"{ref_field} is {'null' if cond['is_null'] else 'not null'}")
-                then = rule.get("then")
-                if then is None:
+                        null_str = "null" if cond["is_null"] else "not null"
+                        conditions.append(f"{ref_field} is {null_str}")
+                    last_then = rule.get("then")
+                if last_then is None:
                     hint = "null"
-                elif isinstance(then, dict):
-                    hint = ", ".join(then.keys())
+                elif isinstance(last_then, dict):
+                    hint = ", ".join(last_then.keys())
                 else:
-                    hint = repr(then)
+                    hint = repr(last_then)
                 return "1. rules", f"conditions: {'; '.join(conditions)} -> {hint}"
 
             if "ref" in props:
@@ -552,13 +557,15 @@ if schema_dict:
         rows = []
         for i, field in enumerate(schema_dict.get("fields", []), 1):
             priority, description = _describe_resolution(field)
-            rows.append({
-                "#": i,
-                "Field": field["name"],
-                "Type": _describe_type(field.get("type", "?")),
-                "Priority": priority,
-                "Resolution": description,
-            })
+            rows.append(
+                {
+                    "#": i,
+                    "Field": field["name"],
+                    "Type": _describe_type(field.get("type", "?")),
+                    "Priority": priority,
+                    "Resolution": description,
+                }
+            )
 
         st.dataframe(rows, use_container_width=True, hide_index=True)
 
@@ -607,7 +614,7 @@ if KAFKA_ENABLED:
 
         effective_count = count if not _stop_event.is_set() else 0
 
-        def _on_progress(i, record):
+        def _on_progress(i, _record):
             _thread_state["produced_count"] = i + 1
             if _stop_event.is_set():
                 raise KeyboardInterrupt
