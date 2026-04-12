@@ -113,6 +113,113 @@ class TestLogicalTypes:
         parsed = datetime.fromisoformat(record["ts"])
         assert parsed.tzinfo is not None
 
+    def test_date_no_hint_is_realistic(self):
+        """Date without hints produces a realistic value within the last ~5 years."""
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {"name": "d", "type": {"type": "int", "logicalType": "date"}},
+            ],
+        }
+        random.seed(42)
+        resolver = RecordResolver(schema)
+        today_days = int(resolver.now_ts // 86400)
+        for _ in range(50):
+            value = resolver.generate()["d"]
+            assert isinstance(value, int)
+            # Should be within the last 5 years
+            assert today_days - 1825 <= value <= today_days
+
+    def test_date_with_range(self):
+        """Date range accepts ISO dates and relative offsets."""
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "d",
+                    "type": {"type": "int", "logicalType": "date"},
+                    "arg.properties": {"range": {"min": "2024-01-01", "max": "2024-12-31"}},
+                },
+            ],
+        }
+        random.seed(42)
+        # Jan 1 2024 = 19723 days since epoch, Dec 31 2024 = 20088
+        start = int(datetime(2024, 1, 1, tzinfo=UTC).timestamp() // 86400)
+        end = int(datetime(2024, 12, 31, tzinfo=UTC).timestamp() // 86400)
+        for _ in range(50):
+            value = RecordResolver(schema).generate()["d"]
+            assert start <= value <= end
+
+    def test_date_with_relative_range(self):
+        """Date range accepts -Nd offsets and 'today'."""
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "d",
+                    "type": {"type": "int", "logicalType": "date"},
+                    "arg.properties": {"range": {"min": "-30d", "max": "today"}},
+                },
+            ],
+        }
+        random.seed(42)
+        resolver = RecordResolver(schema)
+        today = int(resolver.now_ts // 86400)
+        for _ in range(50):
+            value = resolver.generate()["d"]
+            assert today - 30 <= value <= today
+
+    def test_time_millis_no_hint(self):
+        """time-millis produces ms within a day."""
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {"name": "t", "type": {"type": "int", "logicalType": "time-millis"}},
+            ],
+        }
+        random.seed(42)
+        for _ in range(50):
+            value = RecordResolver(schema).generate()["t"]
+            assert 0 <= value < 86_400_000
+
+    def test_time_micros_no_hint(self):
+        """time-micros produces us within a day."""
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {"name": "t", "type": {"type": "long", "logicalType": "time-micros"}},
+            ],
+        }
+        random.seed(42)
+        for _ in range(50):
+            value = RecordResolver(schema).generate()["t"]
+            assert 0 <= value < 86_400_000_000
+
+    def test_time_millis_with_range(self):
+        """time-millis range accepts HH:MM strings (business hours)."""
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "t",
+                    "type": {"type": "int", "logicalType": "time-millis"},
+                    "arg.properties": {"range": {"min": "09:00", "max": "17:00"}},
+                },
+            ],
+        }
+        random.seed(42)
+        nine_am_ms = 9 * 3_600_000
+        five_pm_ms = 17 * 3_600_000
+        for _ in range(50):
+            value = RecordResolver(schema).generate()["t"]
+            assert nine_am_ms <= value <= five_pm_ms
+
 
 class TestDefault:
     def test_default_value_used(self):

@@ -237,6 +237,21 @@ class RecordResolver:
                 return int(ts * 1_000_000)
             return epoch_ms
 
+        # Date range: ISO date strings ("2024-01-01") or "today"/"-30d"
+        if logical == "date":
+            start_days = self._parse_date_offset(range_spec["min"])
+            end_days = self._parse_date_offset(range_spec["max"])
+            return random.randint(start_days, end_days)
+
+        # Time range: ISO time strings ("09:00", "17:30:00") - produces ms or us after midnight
+        if logical in ("time-millis", "time-micros"):
+            start_ms = self._parse_time_of_day(range_spec["min"])
+            end_ms = self._parse_time_of_day(range_spec["max"])
+            ms = random.randint(start_ms, end_ms)
+            if logical == "time-micros":
+                return ms * 1000
+            return ms
+
         # Numeric range
         low = range_spec["min"]
         high = range_spec["max"]
@@ -397,9 +412,15 @@ class RecordResolver:
         if logical == "iso-timestamp":
             return datetime.fromtimestamp(self.now_ts, tz=UTC).isoformat().replace("+00:00", "Z")
         if logical == "date":
-            return random.randint(0, 20000)
-        if logical in ("time-millis", "time-micros"):
-            return random.randint(0, 86_400_000)
+            # Days since epoch — random date in the last ~5 years
+            today_days = int(self.now_ts // 86400)
+            return random.randint(today_days - 1825, today_days)
+        if logical == "time-millis":
+            # Milliseconds after midnight (0 to 86_400_000)
+            return random.randint(0, 86_400_000 - 1)
+        if logical == "time-micros":
+            # Microseconds after midnight (0 to 86_400_000_000)
+            return random.randint(0, 86_400_000_000 - 1)
         # Unknown logical type — fall back to nothing useful
         return None
 
@@ -459,3 +480,47 @@ class RecordResolver:
             delta = {"d": 86400, "h": 3600, "m": 60, "s": 1}[unit]
             return self.now_ts + amount * delta
         raise ValueError(f"Unrecognized time offset: {value!r}")
+
+    def _parse_date_offset(self, value: str | int) -> int:
+        """Parse a date value to days-since-epoch.
+
+        Accepts:
+          - int: already days since epoch
+          - "today": current day
+          - "-30d": relative offset in days
+          - "2024-01-15": ISO date string
+        """
+        today_days = int(self.now_ts // 86400)
+        if isinstance(value, int):
+            return value
+        if value == "today":
+            return today_days
+        # Relative day offset: -30d, +7d
+        match = re.match(r"^(-?\d+)d$", value)
+        if match:
+            return today_days + int(match.group(1))
+        # ISO date string: YYYY-MM-DD
+        try:
+            dt = datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=UTC)
+            return int(dt.timestamp() // 86400)
+        except ValueError as e:
+            raise ValueError(f"Unrecognized date value: {value!r}") from e
+
+    def _parse_time_of_day(self, value: str | int) -> int:
+        """Parse a time-of-day value to milliseconds after midnight.
+
+        Accepts:
+          - int: already milliseconds after midnight
+          - "HH:MM" or "HH:MM:SS" or "HH:MM:SS.fff": ISO time string
+        """
+        if isinstance(value, int):
+            return value
+        # Parse HH:MM[:SS[.fff]]
+        match = re.match(r"^(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$", value)
+        if not match:
+            raise ValueError(f"Unrecognized time-of-day value: {value!r}")
+        hours = int(match.group(1))
+        minutes = int(match.group(2))
+        seconds = int(match.group(3) or 0)
+        millis = int((match.group(4) or "0").ljust(3, "0"))
+        return hours * 3_600_000 + minutes * 60_000 + seconds * 1000 + millis

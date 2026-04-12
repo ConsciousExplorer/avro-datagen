@@ -38,7 +38,13 @@ Avro logical types produce semantically meaningful values:
 | `timestamp-millis` | `long` | Epoch milliseconds |
 | `timestamp-micros` | `long` | Epoch microseconds |
 | `iso-timestamp` | `string` | ISO 8601 string |
-| `date` | `int` | Days since epoch |
+| `date` | `int` | Days since epoch (random date in last ~5 years) |
+| `time-millis` | `int` | Milliseconds after midnight |
+| `time-micros` | `long` | Microseconds after midnight |
+
+All time-based types support `range` hints -- see the
+[arg.properties reference](arg-properties.md#range) for date and time-of-day
+ranges.
 
 ```json
 {
