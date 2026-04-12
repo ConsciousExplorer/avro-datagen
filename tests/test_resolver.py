@@ -113,6 +113,115 @@ class TestLogicalTypes:
         parsed = datetime.fromisoformat(record["ts"])
         assert parsed.tzinfo is not None
 
+    def test_decimal_respects_scale(self):
+        """Decimal with scale=2 produces values with exactly 2 digits after the point."""
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "amount",
+                    "type": {
+                        "type": "bytes",
+                        "logicalType": "decimal",
+                        "precision": 10,
+                        "scale": 2,
+                    },
+                },
+            ],
+        }
+        random.seed(42)
+        for _ in range(50):
+            value = RecordResolver(schema).generate()["amount"]
+            assert isinstance(value, str)
+            # Must be parseable as a decimal
+            from decimal import Decimal
+
+            d = Decimal(value)
+            # Must have exactly 2 digits after decimal
+            _, frac = value.split(".")
+            assert len(frac) == 2
+            # Must not exceed precision
+            digits = value.replace(".", "").lstrip("0") or "0"
+            assert len(digits) <= 10
+            assert d >= 0
+
+    def test_decimal_respects_precision(self):
+        """Decimal respects precision — integer part <= (precision - scale) digits."""
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "amount",
+                    "type": {
+                        "type": "bytes",
+                        "logicalType": "decimal",
+                        "precision": 5,
+                        "scale": 2,
+                    },
+                },
+            ],
+        }
+        random.seed(42)
+        for _ in range(50):
+            value = RecordResolver(schema).generate()["amount"]
+            int_part, _ = value.split(".")
+            # precision 5, scale 2 -> int part can have at most 3 digits
+            assert len(int_part) <= 3
+
+    def test_decimal_zero_scale(self):
+        """Decimal with scale=0 produces integer strings (no decimal point)."""
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "count",
+                    "type": {
+                        "type": "bytes",
+                        "logicalType": "decimal",
+                        "precision": 8,
+                        "scale": 0,
+                    },
+                },
+            ],
+        }
+        random.seed(42)
+        for _ in range(50):
+            value = RecordResolver(schema).generate()["count"]
+            assert "." not in value
+            assert value.isdigit()
+
+    def test_decimal_with_range(self):
+        """Decimal range produces values within bounds and respects scale."""
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "price",
+                    "type": {
+                        "type": "bytes",
+                        "logicalType": "decimal",
+                        "precision": 10,
+                        "scale": 2,
+                    },
+                    "arg.properties": {"range": {"min": 10.0, "max": 500.0}},
+                },
+            ],
+        }
+        random.seed(42)
+        from decimal import Decimal
+
+        for _ in range(50):
+            value = RecordResolver(schema).generate()["price"]
+            d = Decimal(value)
+            assert Decimal("10") <= d <= Decimal("500")
+            # Scale respected
+            assert value.split(".")[1] == value.split(".")[1][:2]
+            assert len(value.split(".")[1]) == 2
+
 
 class TestDefault:
     def test_default_value_used(self):

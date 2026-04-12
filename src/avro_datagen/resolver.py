@@ -237,6 +237,14 @@ class RecordResolver:
                 return int(ts * 1_000_000)
             return epoch_ms
 
+        # Decimal range: respect scale
+        if logical == "decimal":
+            scale = 0
+            if isinstance(avro_type, dict):
+                scale = avro_type.get("scale", 0)
+            value = random.uniform(float(range_spec["min"]), float(range_spec["max"]))
+            return f"{value:.{scale}f}"
+
         # Numeric range
         low = range_spec["min"]
         high = range_spec["max"]
@@ -308,6 +316,8 @@ class RecordResolver:
                 return self._resolve_map(avro_type, props, record)
             if inner_type == "enum":
                 return random.choice(avro_type["symbols"])
+            if logical == "decimal":
+                return self._generate_decimal(avro_type)
             if logical:
                 return self._generate_for_logical(logical)
             # Fixed type
@@ -402,6 +412,25 @@ class RecordResolver:
             return random.randint(0, 86_400_000)
         # Unknown logical type — fall back to nothing useful
         return None
+
+    def _generate_decimal(self, avro_type: dict) -> str:
+        """Generate a decimal value as a string, respecting precision and scale.
+
+        Returned as a string since JSON has no native decimal type — consumers
+        should parse with Decimal(value) to preserve precision.
+        """
+        precision = avro_type.get("precision", 10)
+        scale = avro_type.get("scale", 0)
+        # Precision = total digits, scale = digits after decimal point
+        # Integer part can have at most (precision - scale) digits
+        int_digits = max(precision - scale, 1)
+        max_int = 10**int_digits - 1
+        integer_part = random.randint(0, max_int)
+        if scale > 0:
+            max_frac = 10**scale - 1
+            frac_part = random.randint(0, max_frac)
+            return f"{integer_part}.{frac_part:0{scale}d}"
+        return str(integer_part)
 
     def _generate_primitive(self, type_name: str) -> Any:
         """Generate a value for a primitive Avro type."""

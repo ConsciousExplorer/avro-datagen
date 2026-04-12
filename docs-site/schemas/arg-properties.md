@@ -29,6 +29,31 @@ Generate a value within bounds. Works for numeric types and timestamps.
 
 Integer types produce integers; float/double types produce 2-decimal floats.
 
+### Decimal
+
+For fields with `logicalType: decimal`, `range` produces a decimal string that
+respects the schema's `scale`:
+
+```json
+{
+  "name": "price",
+  "type": {
+    "type": "bytes",
+    "logicalType": "decimal",
+    "precision": 10,
+    "scale": 2
+  },
+  "arg.properties": { "range": { "min": 10.0, "max": 500.0 } }
+}
+```
+
+Produces values like `"47.82"`, `"213.05"`, `"499.99"`. The output is a string
+because JSON has no native decimal type — consumers should parse with
+`Decimal(value)` (Python) or equivalent to preserve precision.
+
+Without a `range` hint, decimals are generated across the full precision/scale
+range (e.g. precision=5, scale=2 -> values between `0.00` and `999.99`).
+
 ### Timestamps
 
 ```json
