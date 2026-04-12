@@ -181,6 +181,38 @@ Only applies to union types that include `"null"`. For unions with multiple
 non-null branches (e.g. `["null", "string", "int"]`), a non-null branch is
 chosen at random when the value is not null.
 
+## length (arrays and maps)
+
+Control the size of generated arrays and maps. Three forms are accepted:
+
+### Flat min/max (preferred)
+
+```json
+{
+  "name": "tags",
+  "type": { "type": "array", "items": "string" },
+  "arg.properties": { "min_length": 2, "max_length": 5 }
+}
+```
+
+Either bound is optional — omitted bounds default to `1` and `5`.
+
+### Nested length dict
+
+```json
+"arg.properties": { "length": { "min": 2, "max": 5 } }
+```
+
+### Fixed length
+
+```json
+"arg.properties": { "length": 3 }
+```
+
+Produces arrays with exactly 3 elements every time.
+
+The same hints work for map types.
+
 ## faker
 
 Delegate value generation to a [Faker](https://faker.readthedocs.io/) provider.

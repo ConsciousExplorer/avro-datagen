@@ -837,6 +837,60 @@ class TestArray:
             assert 2 <= len(record["tags"]) <= 4
             assert all(t in ("a", "b", "c") for t in record["tags"])
 
+    def test_array_min_max_length_flat(self):
+        """min_length/max_length work as a flat alternative to length dict."""
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "tags",
+                    "type": {"type": "array", "items": "string"},
+                    "arg.properties": {"min_length": 3, "max_length": 6},
+                },
+            ],
+        }
+        random.seed(42)
+        for _ in range(30):
+            record = RecordResolver(schema).generate()
+            assert 3 <= len(record["tags"]) <= 6
+
+    def test_array_fixed_length_int(self):
+        """length: N (int) produces arrays of exactly N elements."""
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "tags",
+                    "type": {"type": "array", "items": "string"},
+                    "arg.properties": {"length": 3},
+                },
+            ],
+        }
+        random.seed(42)
+        for _ in range(30):
+            record = RecordResolver(schema).generate()
+            assert len(record["tags"]) == 3
+
+    def test_array_only_max_length(self):
+        """max_length alone uses default min (1)."""
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "tags",
+                    "type": {"type": "array", "items": "string"},
+                    "arg.properties": {"max_length": 2},
+                },
+            ],
+        }
+        random.seed(42)
+        for _ in range(30):
+            record = RecordResolver(schema).generate()
+            assert 1 <= len(record["tags"]) <= 2
+
     def test_array_of_records(self):
         schema = {
             "type": "record",
