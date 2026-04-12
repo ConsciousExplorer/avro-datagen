@@ -3,6 +3,11 @@
 Schemas are standard Avro `.avsc` files. The generator reads the schema and
 produces records by resolving each field in declaration order.
 
+!!! tip "Validate before generating"
+    Run `avro-datagen validate -s schema.avsc` to catch structural issues,
+    wrong logical type base types, broken `ref` targets, and unknown hint
+    keys before you generate any data.
+
 ## Minimal schema
 
 ```json

@@ -54,6 +54,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Records per second (e.g. 10 = 10 rps). No limit if omitted.",
     )
 
+    # ── validate ────────────────────────────────────────────────
+    val = sub.add_parser("validate", help="Validate an Avro schema")
+    val.add_argument(
+        "--schema",
+        "-s",
+        required=True,
+        help="Path to the .avsc schema file",
+    )
+    val.add_argument(
+        "--strict",
+        action="store_true",
+        help="Treat warnings as errors (exit non-zero if any warnings)",
+    )
+
     # ── ui ──────────────────────────────────────────────────────
     ui = sub.add_parser("ui", help="Launch the Streamlit web UI")
     ui.add_argument(
@@ -78,6 +92,35 @@ def build_parser() -> argparse.ArgumentParser:
     gen.add_argument("--schema-dir", help=argparse.SUPPRESS)
 
     return parser
+
+
+def _run_validate(opts: argparse.Namespace) -> None:
+    """Validate a schema and report issues."""
+    from avro_datagen.validator import SchemaValidationError, validate
+
+    try:
+        warnings = validate(opts.schema)
+    except SchemaValidationError as e:
+        print(f"Schema validation failed ({len(e.errors)} error(s)):", file=sys.stderr)
+        for err in e.errors:
+            print(f"  error: {err}", file=sys.stderr)
+        sys.exit(1)
+    except FileNotFoundError:
+        print(f"Schema file not found: {opts.schema}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Failed to load schema: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if warnings:
+        print(f"Schema is valid with {len(warnings)} warning(s):", file=sys.stderr)
+        for warn in warnings:
+            print(f"  warning: {warn}", file=sys.stderr)
+        if opts.strict:
+            sys.exit(1)
+    else:
+        print("Schema is valid.", file=sys.stderr)
+    sys.exit(0)
 
 
 def _run_generate(opts: argparse.Namespace) -> None:
@@ -142,13 +185,15 @@ def main(args: list[str] | None = None) -> None:
 
     # If no subcommand and first arg looks like a flag, default to generate
     raw_args = args if args is not None else sys.argv[1:]
-    if raw_args and raw_args[0] not in ("generate", "ui", "-h", "--help"):
+    if raw_args and raw_args[0] not in ("generate", "validate", "ui", "-h", "--help"):
         raw_args = ["generate", *raw_args]
 
     opts = parser.parse_args(raw_args)
 
     if opts.command == "ui":
         _run_ui(opts)
+    elif opts.command == "validate":
+        _run_validate(opts)
     elif opts.command == "generate":
         _run_generate(opts)
     else:
