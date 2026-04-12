@@ -137,8 +137,15 @@ Conditional generation based on other field values.
 | Operator | Example | Matches when |
 |----------|---------|-------------|
 | `equals` | `{ "field": "type", "equals": "credit" }` | Field value equals the given value |
+| `not_equals` | `{ "field": "type", "not_equals": "credit" }` | Field value does not equal the given value |
 | `is_null` | `{ "field": "notes", "is_null": true }` | Field value is / is not null |
 | `in` | `{ "field": "status", "in": ["active", "pending"] }` | Field value is in the list |
+| `not_in` | `{ "field": "country", "not_in": ["US", "CA"] }` | Field value is not in the list |
+| `gt` | `{ "field": "amount", "gt": 1000 }` | Field value is greater than the given value |
+| `gte` | `{ "field": "age", "gte": 18 }` | Field value is greater than or equal |
+| `lt` | `{ "field": "score", "lt": 50 }` | Field value is less than the given value |
+| `lte` | `{ "field": "age", "lte": 17 }` | Field value is less than or equal |
+| `matches` | `{ "field": "code", "matches": "^[A-Z]-\\d+$" }` | Field value matches the regex |
 
 ### `then` clause
 
