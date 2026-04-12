@@ -38,9 +38,10 @@ jobs:
       - name: Test
         run: uv run pytest -v --cov=avro_datagen --cov-report=term-missing --cov-branch
 
-  # ─── Docs: on main push and tags ─────────────────────────────
+  # ─── Docs: only on main push (not tags) ───────────────────────
   docs-build:
     needs: check
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       pages: write
