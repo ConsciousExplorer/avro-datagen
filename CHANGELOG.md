@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-04-16
+
+### Fixed
+
+- **Nested `arg.properties` in type objects** (#11) — `RecordResolver` now reads `arg.properties` from inside the type object when not present at the field level. Fixes range hints written as `{"type": "int", "arg.properties": {"range": {"min": 1, "max": 5}}}` inside the type dict instead of on the field directly.
+
+### Added
+
+- Tests for nested `arg.properties` range resolution and positive date offset ranges (`+7d`)
+- `CONTRIBUTING.md` with setup, dev workflow, and contribution guidelines
+- GitHub PR template and issue templates (bug report, feature request)
+
 ## [0.3.0] - 2026-04-12
 
 Significant feature release: 7 issues closed covering new logical types,
@@ -147,6 +159,8 @@ Internal maintenance release.
 - Support for all Avro primitives, logical types (uuid, timestamp-millis, iso-timestamp, date), records, arrays, maps, enums, unions, fixed
 - MkDocs documentation site with API reference auto-generated from docstrings
 
+[0.3.1]: https://github.com/ConsciousExplorer/avro-datagen/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/ConsciousExplorer/avro-datagen/compare/v0.2.7...v0.3.0
 [0.2.4]: https://github.com/ConsciousExplorer/avro-datagen/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/ConsciousExplorer/avro-datagen/compare/v0.2.1...v0.2.3
 [0.2.1]: https://github.com/ConsciousExplorer/avro-datagen/compare/v0.2.0...v0.2.1
