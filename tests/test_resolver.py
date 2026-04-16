@@ -416,6 +416,43 @@ class TestRange:
         # Allow a small tolerance for test execution time
         assert thirty_days_ago_ms - 1000 <= record["ts"] <= now_ms + 1000
 
+    def test_range_inside_type_object(self):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "id",
+                    "type": {
+                        "type": "int",
+                        "arg.properties": {"range": {"min": 1, "max": 5}},
+                    },
+                },
+            ],
+        }
+        random.seed(42)
+        for _ in range(50):
+            record = RecordResolver(schema).generate()
+            assert 1 <= record["id"] <= 5
+
+    def test_date_range_positive_offset(self):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "dueDate",
+                    "type": {"type": "int", "logicalType": "date"},
+                    "arg.properties": {"range": {"min": "today", "max": "+7d"}},
+                },
+            ],
+        }
+        resolver = RecordResolver(schema)
+        today_days = int(resolver.now_ts // 86400)
+        for _ in range(50):
+            record = resolver.generate()
+            assert today_days <= record["dueDate"] <= today_days + 7
+
 
 class TestForeignKey:
     def test_foreign_key_from_jsonl_file(self, tmp_path):
