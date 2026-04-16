@@ -77,6 +77,9 @@ class RecordResolver:
         """Resolve a single field's value."""
         props = field.get("arg.properties", {})
         avro_type = field["type"]
+        # Support arg.properties nested inside the type object
+        if not props and isinstance(avro_type, dict):
+            props = avro_type.get("arg.properties", {})
 
         # --- Priority 1: conditional rules ---
         if "rules" in props:
@@ -775,7 +778,7 @@ class RecordResolver:
         if value == "today":
             return today_days
         # Relative day offset: -30d, +7d
-        match = re.match(r"^(-?\d+)d$", value)
+        match = re.match(r"^([+-]?\d+)d$", value)
         if match:
             return today_days + int(match.group(1))
         # ISO date string: YYYY-MM-DD
