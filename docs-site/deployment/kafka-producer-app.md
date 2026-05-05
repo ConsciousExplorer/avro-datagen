@@ -95,7 +95,7 @@ from avro_datagen.producer import build_producer_config, produce
 config = build_producer_config(
     bootstrap_servers="kafka:9092",
     acks="all",
-    compression_type="snappy",
+    compression_type="none",  # one of: none, gzip, snappy, lz4, zstd
 )
 
 result = produce(

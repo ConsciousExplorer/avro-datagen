@@ -178,10 +178,17 @@ if KAFKA_ENABLED:
             value=int(os.getenv("KAFKA_BATCH_SIZE", "16384")),
             min_value=1,
         )
+        compression_options = ["none", "gzip", "snappy", "lz4", "zstd"]
+        env_compression = os.getenv("KAFKA_COMPRESSION_TYPE", "none")
+        compression_index = (
+            compression_options.index(env_compression)
+            if env_compression in compression_options
+            else compression_options.index("none")
+        )
         compression = st.selectbox(
             "Compression",
-            ["none", "gzip", "snappy", "lz4", "zstd"],
-            index=2,
+            compression_options,
+            index=compression_index,
         )
 
         st.subheader("Rate limit")

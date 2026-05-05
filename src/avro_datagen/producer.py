@@ -28,7 +28,7 @@ def build_producer_config(
     acks: str = "all",
     linger_ms: int = 5,
     batch_size: int = 16384,
-    compression_type: str = "snappy",
+    compression_type: str = "none",
 ) -> dict[str, str | int]:
     """Build a confluent-kafka producer config dict from explicit params."""
     config: dict[str, str | int] = {

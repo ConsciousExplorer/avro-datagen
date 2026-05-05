@@ -84,7 +84,11 @@ All sidebar fields can be pre-filled via environment variables or a `.env` file:
 | Password | `KAFKA_SASL_PASSWORD` | (none) |
 | Linger (ms) | `KAFKA_LINGER_MS` | `5` |
 | Batch size | `KAFKA_BATCH_SIZE` | `16384` |
+| Compression | `KAFKA_COMPRESSION_TYPE` | `none` |
 | Schema directory | `SCHEMA_DIR` | (bundled) |
+
+Valid values for `KAFKA_COMPRESSION_TYPE`: `none`, `gzip`, `snappy`, `lz4`, `zstd`.
+An unknown value falls back to `none`.
 
 ## Schema editor
 
