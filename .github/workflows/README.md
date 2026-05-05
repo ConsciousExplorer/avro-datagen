@@ -47,6 +47,7 @@ Tag v* pushed ──> publish.yml
 | `fix/` | Bug fix | `fix/union-null-handling` |
 | `chore/` | Tests, docs, CI, refactoring | `chore/add-map-tests` |
 | `hotfix/` | Urgent production fix | `hotfix/crash-on-empty-schema` |
+| `release/` | Version bump + changelog for a release cut | `release/v0.3.2` |
 
 ## How to contribute
 
@@ -70,13 +71,23 @@ gh pr create --title "feat: Description" --body "Closes #123"
 Releases are triggered by pushing a version tag. Only maintainers do this.
 
 ```bash
-# 1. Update version in pyproject.toml and CHANGELOG.md
-# 2. Commit and merge to main
-# 3. Tag and push
-git tag v0.3.0
-git push origin v0.3.0
-# 4. CI builds and publishes to PyPI automatically
+# 1. Cut a release branch from up-to-date main
+git checkout main && git pull
+git checkout -b release/v0.3.2
+
+# 2. Bump version in pyproject.toml, add a section to CHANGELOG.md
+# 3. Commit, push, open a PR release/v0.3.2 -> main, merge it
+# 4. Tag the merge commit on main and push the tag
+git checkout main && git pull
+git tag -a v0.3.2 -m "v0.3.2"
+git push origin v0.3.2
+# 5. CI builds and publishes to PyPI automatically
 ```
+
+**Tag after the merge, not before.** The tag must point at the merge commit
+on `main` so the `publish.yml` tag-triggered job builds exactly what's on
+`main`. Tagging the release branch before merge would publish a commit that
+isn't on `main`.
 
 ## Security notes
 
