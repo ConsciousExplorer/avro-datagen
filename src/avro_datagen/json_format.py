@@ -39,15 +39,11 @@ def _from_days(value: int) -> str:
 
 
 def _time_from_millis(value: int) -> str:
-    return (datetime.min + timedelta(milliseconds=value)).time().isoformat(
-        timespec="milliseconds"
-    )
+    return (datetime.min + timedelta(milliseconds=value)).time().isoformat(timespec="milliseconds")
 
 
 def _time_from_micros(value: int) -> str:
-    return (datetime.min + timedelta(microseconds=value)).time().isoformat(
-        timespec="microseconds"
-    )
+    return (datetime.min + timedelta(microseconds=value)).time().isoformat(timespec="microseconds")
 
 
 # Integer timedelta arithmetic, not `fromtimestamp(v / 1000)` — float division

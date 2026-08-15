@@ -283,8 +283,7 @@ st.radio(
 
 if not SAVE_WRITABLE:
     st.info(
-        f"{_READONLY_HINT} Saving is disabled; use Download in the Editor tab "
-        "to export a schema.",
+        f"{_READONLY_HINT} Saving is disabled; use Download in the Editor tab to export a schema.",
         icon=":material/lock:",
     )
 
