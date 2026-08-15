@@ -125,6 +125,19 @@ Note that `astral-sh/setup-uv` publishes exact versions only (no floating `v10`
 tag, unlike the `actions/*` repos), so it is pinned to a full version and relies
 on Dependabot to move.
 
+## Gotchas worth knowing
+
+Two things that are easy to get wrong here, both learned the hard way:
+
+- **PyPI trusted publishing is bound to the workflow *filename*.** Renaming or
+  replacing `release.yml` breaks publishing until the trusted publisher on PyPI
+  is updated to match. Add the new one before removing the old.
+- **The `uv.lock` jsonpath in `release-please-config.json` needs `.value`.**
+  release-please parses TOML with a tagging parser that turns every scalar into
+  `{start, end, value}`, so a filter must compare `@.name.value`, not `@.name`.
+  The plain form silently matches nothing — it logs `No entries modified` and
+  carries on.
+
 ## Security notes
 
 - `build` and `publish` are separate jobs — only `publish` has `id-token: write`
