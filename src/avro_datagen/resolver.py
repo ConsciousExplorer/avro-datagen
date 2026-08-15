@@ -166,7 +166,25 @@ class RecordResolver:
 
         return source_value
 
-    def _resolve_faker(self, spec: str | dict) -> Any:
+    @staticmethod
+    def _split_faker_call(args: Any, kwargs: Any) -> tuple[list, dict]:
+        """Normalize a faker spec's args/kwargs into (positional, keyword).
+
+        A dict-valued `args` is treated as keyword arguments — writing
+        {"args": {"text": "####"}} is the natural reading, and unpacking its
+        keys positionally was never useful.
+        """
+        keyword = dict(kwargs) if isinstance(kwargs, dict) else {}
+        if isinstance(args, dict):
+            # Explicit kwargs win over keys carried in `args`
+            return [], {**args, **keyword}
+        if isinstance(args, (list, tuple)):
+            return list(args), keyword
+        if args is None:
+            return [], keyword
+        return [args], keyword
+
+    def _resolve_faker(self, spec: str | dict, siblings: dict | None = None) -> Any:
         """Call a Faker provider method.
 
         spec can be:
@@ -174,17 +192,20 @@ class RecordResolver:
           - a dict:    {"method": "bothify", "args": ["###-???"]}
                        {"method": "random_int", "kwargs": {"min": 1, "max": 100}}
                        {"method": "name", "locale": "ja_JP"}
+
+        With the string form, `args`, `kwargs` and `locale` may be supplied as
+        siblings in the same arg.properties block:
+            {"faker": "numerify", "args": {"text": "####"}}
         """
         if isinstance(spec, str):
             method_name = spec
-            args = []
-            kwargs = {}
-            locale = None
+            call_spec = siblings or {}
         else:
             method_name = spec["method"]
-            args = spec.get("args", [])
-            kwargs = spec.get("kwargs", {})
-            locale = spec.get("locale")
+            call_spec = spec
+
+        args, kwargs = self._split_faker_call(call_spec.get("args"), call_spec.get("kwargs"))
+        locale = call_spec.get("locale")
 
         if locale:
             if locale not in self._locale_fakers:
@@ -215,7 +236,7 @@ class RecordResolver:
 
         # faker: delegate to a Faker provider method
         if "faker" in props:
-            return self._resolve_faker(props["faker"])
+            return self._resolve_faker(props["faker"], props)
 
         # foreign_key: pick a value from another schema's output file
         if "foreign_key" in props:
