@@ -1,0 +1,31 @@
+version: 2
+
+updates:
+  # Falling several major versions behind is what produced the Node.js 20
+  # deprecation warnings in the first place. Monthly bumps keep that from
+  # recurring.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"
+    labels:
+      - dependencies
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: uv
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "build"
+    labels:
+      - dependencies
+    groups:
+      python:
+        patterns:
+          - "*"
