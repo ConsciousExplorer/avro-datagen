@@ -11,6 +11,7 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from avro_datagen.generator import generate
+from avro_datagen.json_format import to_human_json
 from avro_datagen.resolver import RecordResolver
 
 # ── Load .env ────────────────────────────────────────────────────────
@@ -210,12 +211,25 @@ def _schema_to_tmp(schema_dict):
         return Path(tmp.name)
 
 
+# ── JSON format helpers ──────────────────────────────────────────────
+def _human_json_selected() -> bool:
+    """True when the display toggle is set to human-readable JSON."""
+    return st.session_state.get("json_format", "Wire") == "Human"
+
+
+def _format_record(record, schema):
+    """Apply the selected display format to a generated record."""
+    if _human_json_selected():
+        return to_human_json(record, schema)
+    return record
+
+
 # ── Sample helper ────────────────────────────────────────────────────
 def _show_sample(schema):
     """Try to generate and display one sample record from a schema dict."""
     try:
         resolver = RecordResolver(schema)
-        sample = resolver.generate()
+        sample = _format_record(resolver.generate(), schema)
         st.caption("Sample record")
         st.json(sample)
     except Exception as e:
@@ -230,6 +244,20 @@ st.subheader("Schema")
 schema_path = None
 schema_dict = None
 edited_schema = None
+
+# Declared before the tabs render — _show_sample() reads this on every tab.
+st.radio(
+    "JSON format",
+    ["Wire", "Human"],
+    horizontal=True,
+    key="json_format",
+    help=(
+        "Wire shows the Avro physical encoding (timestamps as epoch numbers). "
+        "Human shows ISO-8601 strings, which is what a Kafka UI produce form "
+        "with a schema-registry serde expects. Display only — the Kafka "
+        "producer always sends wire form."
+    ),
+)
 
 tab_local, tab_upload, tab_editor = st.tabs(["Local schemas", "Upload", "Editor"])
 
@@ -444,11 +472,22 @@ if schema_path and gen_schema:
         elapsed = time.time() - start_t
         actual_rate = len(records) / elapsed if elapsed > 0 else 0
 
+        if _human_json_selected():
+            records = [to_human_json(r, gen_schema) for r in records]
+
         m1, m2, m3 = st.columns(3)
         m1.metric("Records", f"{len(records):,} / {gen_count:,}")
         m2.metric("Rate", f"{actual_rate:,.0f} rec/s")
         m3.metric("Elapsed", f"{elapsed:.2f}s")
         st.dataframe(records, use_container_width=True, hide_index=True)
+
+        st.download_button(
+            "Download JSON lines",
+            data="\n".join(json.dumps(r) for r in records) + "\n",
+            file_name=f"{gen_schema.get('name', 'records')}.jsonl",
+            mime="application/x-ndjson",
+            use_container_width=True,
+        )
 
         os.unlink(gen_path)
 
@@ -615,6 +654,10 @@ if KAFKA_ENABLED:
     if security_protocol:
         target_label += f" -- {security_protocol}"
     st.caption(f"Target: {target_label}")
+    st.caption(
+        "Records are always produced in wire form — the JSON format toggle "
+        "above affects the displayed samples only."
+    )
 
     # Grab thread-safe shared objects from session state.
     # These persist across Streamlit reruns so the background thread

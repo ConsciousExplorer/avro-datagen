@@ -2,6 +2,7 @@
 
 import json
 import time
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -70,3 +71,35 @@ class TestCLI:
     def test_schema_required(self):
         with pytest.raises(SystemExit):
             main(["generate"])
+
+
+class TestJsonFormat:
+    def test_default_is_wire_form(self, capsys):
+        main(["--schema", TXN_SCHEMA, "--count", "1", "--seed", "42"])
+        record = json.loads(capsys.readouterr().out.strip())
+        assert isinstance(record["timestamp"], int)
+
+    def test_human_renders_iso_timestamps(self, capsys):
+        main(["--schema", TXN_SCHEMA, "--count", "1", "--seed", "42", "--json-format", "human"])
+        record = json.loads(capsys.readouterr().out.strip())
+        assert isinstance(record["timestamp"], str)
+        assert record["timestamp"].endswith("Z")
+
+    def test_human_round_trips_to_the_wire_value(self, capsys):
+        main(["--schema", TXN_SCHEMA, "--count", "1", "--seed", "42"])
+        wire = json.loads(capsys.readouterr().out.strip())
+
+        main(["--schema", TXN_SCHEMA, "--count", "1", "--seed", "42", "--json-format", "human"])
+        human = json.loads(capsys.readouterr().out.strip())
+
+        parsed = datetime.fromisoformat(human["timestamp"].replace("Z", "+00:00"))
+        assert round(parsed.timestamp() * 1000) == wire["timestamp"]
+
+    def test_wire_form_is_explicit_and_matches_default(self, capsys):
+        main(["--schema", TXN_SCHEMA, "--count", "5", "--seed", "42"])
+        default = capsys.readouterr().out
+
+        main(["--schema", TXN_SCHEMA, "--count", "5", "--seed", "42", "--json-format", "wire"])
+        explicit = capsys.readouterr().out
+
+        assert default == explicit

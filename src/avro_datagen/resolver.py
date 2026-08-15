@@ -15,6 +15,8 @@ from typing import Any, ClassVar
 
 from faker import Faker
 
+from avro_datagen.json_format import iso_utc
+
 # Avro type can be a primitive string ("string", "int"), a complex dict
 # ({"type": "string", "logicalType": "uuid"}), or a union list (["null", "string"]).
 type AvroType = str | dict[str, Any] | list[Any]
@@ -161,8 +163,7 @@ class RecordResolver:
         # Handle type conversion: e.g. epoch millis -> ISO string
         target_logical = self._get_logical_type(avro_type)
         if target_logical == "iso-timestamp" and isinstance(source_value, int):
-            dt = datetime.fromtimestamp(source_value / 1000, tz=UTC)
-            return dt.isoformat().replace("+00:00", "Z")
+            return iso_utc(datetime.fromtimestamp(source_value / 1000, tz=UTC))
 
         return source_value
 
@@ -333,7 +334,7 @@ class RecordResolver:
             ts = start + random.random() * (end - start)
             epoch_ms = int(ts * 1000)
             if logical == "iso-timestamp":
-                return datetime.fromtimestamp(ts, tz=UTC).isoformat().replace("+00:00", "Z")
+                return iso_utc(datetime.fromtimestamp(ts, tz=UTC))
             if logical == "timestamp-micros":
                 return int(ts * 1_000_000)
             return epoch_ms
@@ -694,7 +695,7 @@ class RecordResolver:
         if logical == "timestamp-micros":
             return int(self.now_ts * 1_000_000)
         if logical == "iso-timestamp":
-            return datetime.fromtimestamp(self.now_ts, tz=UTC).isoformat().replace("+00:00", "Z")
+            return iso_utc(datetime.fromtimestamp(self.now_ts, tz=UTC))
         if logical == "date":
             # Days since epoch — random date in the last ~5 years
             today_days = int(self.now_ts // 86400)
