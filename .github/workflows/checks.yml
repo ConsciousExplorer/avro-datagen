@@ -1,0 +1,35 @@
+name: Checks
+
+# Reusable quality gate. Called by ci.yml (on PRs) and release.yml (on main)
+# so the two can never drift apart.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Lint
+        run: uv run ruff check src/ tests/
+
+      - name: Format
+        run: uv run ruff format --check src/ tests/
+
+      - name: Type check
+        run: uv run pyright
+
+      - name: Test
+        run: uv run pytest -v --cov=avro_datagen --cov-report=term-missing --cov-branch
