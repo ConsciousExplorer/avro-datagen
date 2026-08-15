@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-08-15
+
+### Added
+
+- **Human-readable JSON output** (#16) — `avro-datagen generate --json-format human` renders temporal logical types as ISO-8601 strings (`"2026-08-02T17:23:43.392Z"`) instead of the Avro wire encoding (`1785691423392`). Kafka UIs with a schema-registry serde, such as kafbat-ui's produce form, expect the human representation and encode it themselves, so samples can now be pasted in without hand-converting timestamps. The UI gains a matching **Wire / Human** toggle governing the sample record, the results table and a new JSON-lines download. Exposed programmatically as `avro_datagen.to_human_json(record, schema)`. The default is `wire`, so existing output is byte-identical, and the Kafka producer always sends wire form.
+- **Sibling `args` / `kwargs` / `locale` on string-form faker hints** (#17) — `{"faker": "numerify", "args": {"text": "####"}}` is now the short form of the dict spec. An object-valued `args` is passed as keyword arguments, a list positionally.
+- **Hint vocabulary checks in `validate`** (#18) — unknown `arg.properties` keys were already warned about; the validator now also reports `args`/`kwargs`/`locale` written without a sibling `faker`, unknown Faker method names, malformed faker specs, `range` bounds that do not match the field's logical type, and `options` entries the field's Avro type cannot hold. It reads hints from inside the type object (as the resolver has since #11) and descends into array `items` hints — the two places a misplaced key hides. All warnings, so `--strict` promotes them.
+
+### Fixed
+
+- **String-form faker hints silently dropped sibling `args`** (#17) — `_resolve_with_hints` passed only `props["faker"]` to `_resolve_faker`, whose string branch hardcoded empty args. A `cardLast4` field annotated `"####"` generated 3-digit values. A dict-valued `args` is now treated as keyword arguments in both spec forms; previously it unpacked the dict's keys positionally, which was never useful.
+- **Read-only schema directory crashed the UI's Save** (#19) — mounting the schema dir read-only, the correct setup when schemas are git-owned contracts, raised an unhandled `PermissionError` as a Streamlit traceback. Writability is probed at startup: the save controls are disabled with an explanatory banner, and the writes are wrapped in `try/except OSError`. Browsing, sampling, generating and Download keep working.
+- **`avro-datagen ui` named the wrong extra** (#16) — the streamlit-missing message said `pip install "avro-datagen[app]"`; it now names `[ui]`, matching the README and docs, and mentions `[app]` as UI + Kafka.
+
+### Changed
+
+- `range` hints missing `min` or `max` are now a validation error rather than a `KeyError` at generation time.
+- The three copies of the ISO-8601-with-`Z` formatting in `resolver.py` share `json_format.iso_utc()`. Output is unchanged.
+
 ## [0.3.2] - 2026-05-05
 
 ### Fixed

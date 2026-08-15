@@ -64,6 +64,10 @@ avro-datagen -s order.avsc -c 5 --seed 42 --pretty
 
 # Rate-limited, infinite
 avro-datagen -s order.avsc -c 0 --rate 10
+
+# ISO-8601 timestamps instead of the Avro wire encoding, for pasting into
+# a Kafka UI produce form
+avro-datagen -s order.avsc -c 5 --json-format human
 ```
 
 ## Library

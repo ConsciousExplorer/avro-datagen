@@ -37,7 +37,7 @@ wheels = [
 
 [[package]]
 name = "avro-datagen"
-version = "0.2.6"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "faker" },
@@ -55,7 +55,9 @@ dev = [
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "python-dotenv" },
     { name = "ruff" },
+    { name = "streamlit" },
 ]
 kafka = [
     { name = "confluent-kafka" },
@@ -68,6 +70,7 @@ ui = [
 [package.metadata]
 requires-dist = [
     { name = "avro-datagen", extras = ["kafka", "ui"], marker = "extra == 'app'" },
+    { name = "avro-datagen", extras = ["ui"], marker = "extra == 'dev'" },
     { name = "confluent-kafka", marker = "extra == 'kafka'", specifier = ">=2.8.0" },
     { name = "faker", specifier = ">=37.0.0" },
     { name = "mkdocs-material", marker = "extra == 'dev'", specifier = ">=9.7.6" },

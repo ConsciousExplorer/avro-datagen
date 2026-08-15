@@ -1,6 +1,6 @@
 [project]
 name = "avro-datagen"
-version = "0.3.2"
+version = "0.4.0"
 description = "Schema-driven fake data generator for Avro schemas with arg.properties hints"
 authors = [
     {name = "Edwin Stoltz", email = "edwinstoltz.es@gmail.com"},
@@ -35,6 +35,9 @@ kafka = ["confluent-kafka>=2.8.0"]
 ui = ["streamlit>=1.45.0", "python-dotenv>=1.1.0"]
 app = ["avro-datagen[kafka,ui]"]
 dev = [
+    # The UI's helpers are unit-tested (tests/test_app_helpers.py), so streamlit
+    # has to be present or those tests silently skip in CI.
+    "avro-datagen[ui]",
     "pytest>=8.0.0",
     "pytest-cov>=7.1.0",
     "mkdocs-material>=9.7.6",
