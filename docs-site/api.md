@@ -18,6 +18,10 @@ Auto-generated from source docstrings.
 
 ::: avro_datagen.json_format
 
+## validator
+
+::: avro_datagen.validator
+
 ## producer
 
 ::: avro_datagen.producer
