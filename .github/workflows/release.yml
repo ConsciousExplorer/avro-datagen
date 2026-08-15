@@ -1,0 +1,123 @@
+name: Release
+
+# One workflow, one run, for everything that happens on main: checks, docs, and
+# — when a release PR lands — the tag, the GitHub Release, and the PyPI upload.
+#
+# The PyPI jobs have to live here rather than in a separate tag-triggered
+# workflow: a tag or release created with GITHUB_TOKEN does not trigger another
+# workflow run, so they are gated on release-please's `release_created` output
+# instead.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Never cancel a run that might be mid-publish.
+  cancel-in-progress: false
+
+jobs:
+  check:
+    uses: ./.github/workflows/checks.yml
+
+  # ─── Docs: every push to main ────────────────────────────────
+  docs:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Build docs
+        run: uv run mkdocs build
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v5
+
+  # ─── Release: maintains the release PR; cuts a release when it lands ──
+  release-please:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@v5
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # ─── PyPI: only when release-please just cut a release ───────
+  build:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      # github.sha is the release commit release-please just tagged, so this
+      # builds exactly the version that was released.
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Build package
+        run: uv build
+
+      - name: Check the built version matches the tag
+        run: |
+          tag="${{ needs.release-please.outputs.tag_name }}"
+          built="v$(uv version --short)"
+          if [ "$tag" != "$built" ]; then
+            echo "::error::tag $tag does not match built version $built"
+            exit 1
+          fi
+          echo "$tag matches the built distribution"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/avro-datagen
+    permissions:
+      # Trusted publishing — this is the only job that gets a token.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
