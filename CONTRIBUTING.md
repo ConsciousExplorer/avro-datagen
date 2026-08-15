@@ -39,6 +39,13 @@ make test       # pytest with coverage
 3. Run `make check` and confirm everything passes.
 4. Open a pull request against `main` using the PR template.
 
+**Title your PR as a conventional commit** — `feat: add decimal range support`,
+`fix: honor null_probability on nested unions`, `docs: …`, `chore: …`. PRs are
+squash-merged, so the title becomes the commit subject on `main` and the line
+that appears in the changelog for the next release. CI fails on a title that
+does not parse. See [.github/workflows/README.md](.github/workflows/README.md)
+for the full list of prefixes and what each does to the version.
+
 ## Reporting a bug
 
 Open an issue using the **Bug report** template. Include a minimal schema and the command you ran so the problem is reproducible.
