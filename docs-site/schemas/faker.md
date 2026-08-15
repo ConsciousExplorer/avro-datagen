@@ -47,9 +47,41 @@ Pass the Faker method name as a string:
 
 See the full list at [Faker Providers](https://faker.readthedocs.io/en/master/providers.html).
 
+### With arguments, the short way
+
+`args`, `kwargs` and `locale` can sit next to a string-form `faker` hint in the
+same `arg.properties` block. An object-valued `args` is passed as keyword
+arguments:
+
+```json
+{
+  "name": "cardLast4",
+  "type": "string",
+  "arg.properties": { "faker": "numerify", "args": { "text": "####" } }
+}
+```
+
+A list-valued `args` is passed positionally instead:
+
+```json
+{
+  "name": "accountNumber",
+  "type": "string",
+  "arg.properties": { "faker": "bothify", "args": ["###-???-####"] }
+}
+```
+
+!!! warning "Before 0.4.0"
+    Siblings were silently ignored, so `{"faker": "numerify", "args":
+    {"text": "####"}}` ran `numerify()` with its default `"###"` and produced
+    three digits instead of four. `avro-datagen validate` now flags `args`,
+    `kwargs` or `locale` written without a sibling `faker`.
+
 ## Advanced usage
 
-Pass a dict with `method`, `args`, `kwargs`, and/or `locale`:
+Pass a dict with `method`, `args`, `kwargs`, and/or `locale`. This is the
+explicit form of the same thing — use it when you prefer the call to be one
+self-contained object:
 
 ### With arguments
 

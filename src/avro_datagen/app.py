@@ -11,6 +11,7 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from avro_datagen.generator import generate
+from avro_datagen.json_format import to_human_json
 from avro_datagen.resolver import RecordResolver
 
 # ── Load .env ────────────────────────────────────────────────────────
@@ -23,6 +24,28 @@ _BUNDLED_SCHEMAS = _PKG_DIR / "schemas"
 
 # Save directory is always in the working directory, never inside the package
 SAVE_DIR = Path(os.getenv("SCHEMA_DIR", "schemas"))
+
+
+def _save_dir_writable(save_dir: Path | None = None) -> bool:
+    """True when `save_dir` — or its nearest existing ancestor — accepts writes.
+
+    Mounting the schema directory read-only is the right setup when schemas are
+    git-owned contracts, so this is a supported configuration rather than an
+    error. Walking up to the nearest existing ancestor matters: the directory
+    often does not exist yet, and `mkdir` will succeed there as long as its
+    parent is writable — checking the missing directory itself would wrongly
+    disable saving in the common case.
+
+    Defaults to SAVE_DIR; the argument exists so the check is testable.
+    """
+    probe = (save_dir or SAVE_DIR).resolve()
+    while not probe.exists() and probe != probe.parent:
+        probe = probe.parent
+    return os.access(probe, os.W_OK)
+
+
+SAVE_WRITABLE = _save_dir_writable()
+_READONLY_HINT = f"`{SAVE_DIR}` is read-only — edits go through git."
 
 
 def _get_schema_dir() -> Path:
@@ -210,12 +233,25 @@ def _schema_to_tmp(schema_dict):
         return Path(tmp.name)
 
 
+# ── JSON format helpers ──────────────────────────────────────────────
+def _human_json_selected() -> bool:
+    """True when the display toggle is set to human-readable JSON."""
+    return st.session_state.get("json_format", "Wire") == "Human"
+
+
+def _format_record(record, schema):
+    """Apply the selected display format to a generated record."""
+    if _human_json_selected():
+        return to_human_json(record, schema)
+    return record
+
+
 # ── Sample helper ────────────────────────────────────────────────────
 def _show_sample(schema):
     """Try to generate and display one sample record from a schema dict."""
     try:
         resolver = RecordResolver(schema)
-        sample = resolver.generate()
+        sample = _format_record(resolver.generate(), schema)
         st.caption("Sample record")
         st.json(sample)
     except Exception as e:
@@ -230,6 +266,26 @@ st.subheader("Schema")
 schema_path = None
 schema_dict = None
 edited_schema = None
+
+# Declared before the tabs render — _show_sample() reads this on every tab.
+st.radio(
+    "JSON format",
+    ["Wire", "Human"],
+    horizontal=True,
+    key="json_format",
+    help=(
+        "Wire shows the Avro physical encoding (timestamps as epoch numbers). "
+        "Human shows ISO-8601 strings, which is what a Kafka UI produce form "
+        "with a schema-registry serde expects. Display only — the Kafka "
+        "producer always sends wire form."
+    ),
+)
+
+if not SAVE_WRITABLE:
+    st.info(
+        f"{_READONLY_HINT} Saving is disabled; use Download in the Editor tab to export a schema.",
+        icon=":material/lock:",
+    )
 
 tab_local, tab_upload, tab_editor = st.tabs(["Local schemas", "Upload", "Editor"])
 
@@ -280,16 +336,27 @@ with tab_upload:
                 placeholder="filename.avsc",
             )
         with col_upload_btn:
-            if st.button("Upload", use_container_width=True, type="primary", key="save_upload_btn"):
+            if st.button(
+                "Upload",
+                use_container_width=True,
+                type="primary",
+                key="save_upload_btn",
+                disabled=not SAVE_WRITABLE,
+                help=None if SAVE_WRITABLE else _READONLY_HINT,
+            ):
                 fn = save_filename_upload.strip() or "uploaded_schema.avsc"
                 if not fn.endswith(".avsc"):
                     fn += ".avsc"
-                SAVE_DIR.mkdir(parents=True, exist_ok=True)
                 save_path = SAVE_DIR / fn
-                formatted = json.dumps(upload_dict, indent=2) + "\n"
-                with open(save_path, "w") as f:
-                    f.write(formatted)
-                st.toast(f"Saved to `{save_path}`", icon=":material/save:")
+                try:
+                    SAVE_DIR.mkdir(parents=True, exist_ok=True)
+                    formatted = json.dumps(upload_dict, indent=2) + "\n"
+                    with open(save_path, "w") as f:
+                        f.write(formatted)
+                except OSError as e:
+                    st.error(f"Could not save to `{save_path}`: {e}")
+                else:
+                    st.toast(f"Saved to `{save_path}`", icon=":material/save:")
 
         col_schema, col_sample = st.columns(2, gap="large")
         with col_schema, st.expander("Schema JSON", expanded=False):
@@ -333,8 +400,9 @@ with tab_editor:
             "Save to file",
             use_container_width=True,
             type="primary",
-            disabled=not st.session_state.get("schema_editor", ""),
+            disabled=not st.session_state.get("schema_editor", "") or not SAVE_WRITABLE,
             key="save_editor_btn",
+            help=None if SAVE_WRITABLE else _READONLY_HINT,
         ):
             try:
                 parsed = json.loads(st.session_state.schema_editor)
@@ -348,6 +416,8 @@ with tab_editor:
                     f.write(formatted)
                 st.session_state.save_filename = fn
                 st.toast(f"Saved to `{save_path}`", icon=":material/save:")
+            except OSError as e:
+                st.error(f"Could not save to `{SAVE_DIR}`: {e}")
             except Exception as e:
                 st.error(f"Could not save: {e}")
     with col_reset:
@@ -444,11 +514,22 @@ if schema_path and gen_schema:
         elapsed = time.time() - start_t
         actual_rate = len(records) / elapsed if elapsed > 0 else 0
 
+        if _human_json_selected():
+            records = [to_human_json(r, gen_schema) for r in records]
+
         m1, m2, m3 = st.columns(3)
         m1.metric("Records", f"{len(records):,} / {gen_count:,}")
         m2.metric("Rate", f"{actual_rate:,.0f} rec/s")
         m3.metric("Elapsed", f"{elapsed:.2f}s")
         st.dataframe(records, use_container_width=True, hide_index=True)
+
+        st.download_button(
+            "Download JSON lines",
+            data="\n".join(json.dumps(r) for r in records) + "\n",
+            file_name=f"{gen_schema.get('name', 'records')}.jsonl",
+            mime="application/x-ndjson",
+            use_container_width=True,
+        )
 
         os.unlink(gen_path)
 
@@ -615,6 +696,10 @@ if KAFKA_ENABLED:
     if security_protocol:
         target_label += f" -- {security_protocol}"
     st.caption(f"Target: {target_label}")
+    st.caption(
+        "Records are always produced in wire form — the JSON format toggle "
+        "above affects the displayed samples only."
+    )
 
     # Grab thread-safe shared objects from session state.
     # These persist across Streamlit reruns so the background thread

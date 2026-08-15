@@ -14,6 +14,10 @@ Auto-generated from source docstrings.
 
 ::: avro_datagen.resolver
 
+## json_format
+
+::: avro_datagen.json_format
+
 ## producer
 
 ::: avro_datagen.producer

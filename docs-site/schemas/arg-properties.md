@@ -3,6 +3,13 @@
 `arg.properties` is an Avro-compliant custom attribute on field objects. It
 controls how the generator produces values for that field.
 
+!!! tip "Check your hints"
+    The generator ignores keys it does not recognise, so a typo produces
+    plausible-looking but wrong data rather than an error. Run
+    `avro-datagen validate -s schema.avsc` to have unknown keys, misplaced
+    keys, unknown Faker methods, malformed `range` bounds and unencodable
+    `options` reported with their field paths. Add `--strict` to fail on them.
+
 ## options
 
 Pick a random element from a list. Duplicates act as weighting.

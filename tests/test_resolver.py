@@ -1438,3 +1438,134 @@ class TestNestedRecord:
         record = RecordResolver(schema).generate()
         assert isinstance(record["inner"], dict)
         assert record["inner"]["value"] in ("x", "y")
+
+
+class TestFaker:
+    """String-form and dict-form faker specs.
+
+    The string form accepts `args`, `kwargs` and `locale` as siblings in the
+    same arg.properties block (issue #17) — before that, siblings were dropped
+    and `{"faker": "numerify", "args": {"text": "####"}}` produced 3 digits.
+    """
+
+    @staticmethod
+    def _one_field(props):
+        return {
+            "type": "record",
+            "name": "T",
+            "fields": [{"name": "x", "type": "string", "arg.properties": props}],
+        }
+
+    def test_bare_string_form(self):
+        schema = self._one_field({"faker": "name"})
+        random.seed(42)
+        record = RecordResolver(schema).generate()
+        assert isinstance(record["x"], str)
+        assert record["x"]
+
+    def test_sibling_dict_args_become_kwargs(self):
+        """The issue's exact case: cardLast4 annotated '####' must be 4 digits."""
+        schema = self._one_field({"faker": "numerify", "args": {"text": "####"}})
+        random.seed(42)
+        values = [RecordResolver(schema).generate()["x"] for _ in range(50)]
+        assert all(len(v) == 4 and v.isdigit() for v in values), values
+        # Leading zeros are preserved (a string, not an int)
+        assert all(isinstance(v, str) for v in values)
+
+    def test_sibling_positional_args(self):
+        schema = self._one_field({"faker": "numerify", "args": ["##-##"]})
+        random.seed(42)
+        for _ in range(20):
+            value = RecordResolver(schema).generate()["x"]
+            assert len(value) == 5
+            assert value[2] == "-"
+
+    def test_sibling_kwargs(self):
+        schema = self._one_field({"faker": "random_int", "kwargs": {"min": 5, "max": 5}})
+        random.seed(42)
+        assert RecordResolver(schema).generate()["x"] == 5
+
+    def test_sibling_scalar_args_is_positional(self):
+        schema = self._one_field({"faker": "numerify", "args": "#####"})
+        random.seed(42)
+        value = RecordResolver(schema).generate()["x"]
+        assert len(value) == 5 and value.isdigit()
+
+    def test_sibling_locale(self):
+        schema = self._one_field({"faker": "name", "locale": "ja_JP"})
+        random.seed(42)
+        record = RecordResolver(schema, seed=42).generate()
+        assert isinstance(record["x"], str)
+        assert record["x"]
+
+    def test_dict_form_positional_args_unchanged(self):
+        schema = self._one_field({"faker": {"method": "numerify", "args": ["###-###"]}})
+        random.seed(42)
+        for _ in range(20):
+            value = RecordResolver(schema).generate()["x"]
+            assert len(value) == 7
+            assert value[3] == "-"
+
+    def test_dict_form_kwargs_unchanged(self):
+        schema = self._one_field(
+            {"faker": {"method": "random_int", "kwargs": {"min": 7, "max": 7}}}
+        )
+        random.seed(42)
+        assert RecordResolver(schema).generate()["x"] == 7
+
+    def test_dict_form_dict_args_treated_as_kwargs(self):
+        """Previously unpacked dict keys positionally — numerify('text')."""
+        schema = self._one_field({"faker": {"method": "numerify", "args": {"text": "####"}}})
+        random.seed(42)
+        values = [RecordResolver(schema).generate()["x"] for _ in range(20)]
+        assert all(len(v) == 4 and v.isdigit() for v in values), values
+
+    def test_unknown_method_still_raises(self):
+        schema = self._one_field({"faker": "not_a_real_provider"})
+        with pytest.raises(ValueError, match="Unknown Faker method"):
+            RecordResolver(schema).generate()
+
+    def test_siblings_work_inside_rules_then(self):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {"name": "kind", "type": "string", "arg.properties": {"options": ["card"]}},
+                {
+                    "name": "last4",
+                    "type": "string",
+                    "arg.properties": {
+                        "rules": [
+                            {
+                                "when": {"field": "kind", "equals": "card"},
+                                "then": {"faker": "numerify", "args": {"text": "####"}},
+                            }
+                        ]
+                    },
+                },
+            ],
+        }
+        random.seed(42)
+        for _ in range(20):
+            value = RecordResolver(schema).generate()["last4"]
+            assert len(value) == 4 and value.isdigit()
+
+    def test_siblings_work_inside_array_items(self):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "codes",
+                    "type": {"type": "array", "items": "string"},
+                    "arg.properties": {
+                        "length": 3,
+                        "items": {"faker": "numerify", "args": {"text": "####"}},
+                    },
+                },
+            ],
+        }
+        random.seed(42)
+        record = RecordResolver(schema).generate()
+        assert len(record["codes"]) == 3
+        assert all(len(c) == 4 and c.isdigit() for c in record["codes"])

@@ -103,6 +103,40 @@ avro-datagen generate -s schema.avsc -c 10
 | `--seed` | | random | Seed for reproducible output |
 | `--rate` | `-r` | unlimited | Records per second |
 | `--pretty` | `-p` | off | Pretty-print JSON |
+| `--json-format` | | `wire` | `wire` or `human` — see below |
+
+### Wire vs human JSON
+
+Avro stores temporal logical types as numbers: a `timestamp-millis` is epoch
+milliseconds, a `date` is days since epoch. That *wire* form is what the
+producer sends, and it is the default.
+
+Kafka UIs with a schema-registry serde — kafbat-ui's produce form, for one —
+expect the *human* form instead and encode it themselves. Use `--json-format
+human` to get output you can paste straight into such a form:
+
+```bash
+avro-datagen -s schemas/transaction.avsc -c 1
+# {"timestamp": 1785691423392, ...}
+
+avro-datagen -s schemas/transaction.avsc -c 1 --json-format human
+# {"timestamp": "2026-08-02T17:23:43.392Z", ...}
+```
+
+| Logical type | Wire | Human |
+|--------------|------|-------|
+| `timestamp-millis` | `1785691423392` | `2026-08-02T17:23:43.392Z` |
+| `timestamp-micros` | `1785691423392392` | `2026-08-02T17:23:43.392392Z` |
+| `date` | `20500` | `2026-02-16` |
+| `time-millis` | `45296789` | `12:34:56.789` |
+| `time-micros` | `45296789123` | `12:34:56.789123` |
+
+Everything else is unchanged — `uuid`, `decimal` and `iso-timestamp` are
+already strings. The conversion is lossless in both directions.
+
+The same choice is available in the UI as a **Wire / Human** toggle above the
+schema tabs. It affects the displayed sample, the generated records table and
+the download; the Kafka producer always sends wire form.
 
 ### Validate
 
@@ -114,8 +148,15 @@ avro-datagen validate -s schemas/transaction.avsc
 avro-datagen validate -s schemas/transaction.avsc --strict  # warnings fail too
 ```
 
-Exits 0 if valid, 1 if errors are found. Warnings (unknown hint keys, unknown
-logical types) are reported but do not fail unless `--strict` is set.
+Exits 0 if valid, 1 if errors are found. Warnings are reported but do not fail
+unless `--strict` is set. The validator also checks the hint vocabulary itself,
+which catches mistakes the resolver would otherwise ignore silently:
+
+- unknown `arg.properties` keys (`argz`, `option`, `fakers`, …)
+- `args` / `kwargs` / `locale` written without a sibling `faker` hint
+- unknown Faker method names, and malformed faker specs
+- `range` bounds that do not match the field's (logical) type
+- `options` entries the field's Avro type cannot hold
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|

@@ -47,7 +47,35 @@ The UI looks for schemas in this order:
 3. `./schemas/` in the current directory (if it exists)
 4. Bundled example schemas from the package
 
+### Read-only schema directories
+
+Mounting the schema directory read-only is a supported setup — it is the right
+one when schemas are git-owned contracts that should not be edited from a web
+form:
+
+```bash
+docker run -p 8501:8501 -v "$PWD/schemas:/schemas:ro" -e SCHEMA_DIR=/schemas ...
+```
+
+The UI detects this at startup, disables the save controls with an explanatory
+hint, and shows a banner. Browsing, sampling, generating and the editor's
+**Download** button all keep working — only writing back is off.
+
 ## Features
+
+### JSON format
+
+A **Wire / Human** toggle above the schema tabs controls how temporal logical
+types are displayed:
+
+- **Wire** (default) — the Avro physical encoding, e.g. `1785691423392`
+- **Human** — ISO-8601, e.g. `"2026-08-02T17:23:43.392Z"`
+
+Human form is what a Kafka UI produce form with a schema-registry serde
+expects, so a sample copied in that mode can be pasted straight in. The toggle
+affects the sample record, the generated records table and the download only —
+the Kafka producer always sends wire form. The CLI equivalent is
+`--json-format human`.
 
 ### Schema tabs
 

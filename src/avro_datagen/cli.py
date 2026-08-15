@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 
 from avro_datagen.generator import generate
+from avro_datagen.json_format import to_human_json
+from avro_datagen.resolver import load_schema
 
 _PKG_DIR = Path(__file__).parent
 
@@ -52,6 +54,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=None,
         help="Records per second (e.g. 10 = 10 rps). No limit if omitted.",
+    )
+    gen.add_argument(
+        "--json-format",
+        choices=["wire", "human"],
+        default="wire",
+        help=(
+            "How temporal logical types are rendered: 'wire' (default) keeps the "
+            "Avro physical encoding, 'human' renders ISO-8601 strings for pasting "
+            "into a Kafka UI produce form."
+        ),
     )
 
     # ── validate ────────────────────────────────────────────────
@@ -128,9 +140,15 @@ def _run_generate(opts: argparse.Namespace) -> None:
     indent = 2 if opts.pretty else None
     interval = 1.0 / opts.rate if opts.rate else 0.0
 
+    # Human form is a post-processing step over wire-form output, so it needs
+    # the schema alongside each record. Loaded once, only when asked for.
+    human_schema = load_schema(opts.schema) if opts.json_format == "human" else None
+
     try:
         for record in generate(opts.schema, opts.count, opts.seed):
             start = time.monotonic()
+            if human_schema is not None:
+                record = to_human_json(record, human_schema)
             print(json.dumps(record, indent=indent))
             if interval:
                 elapsed = time.monotonic() - start
@@ -147,7 +165,9 @@ def _run_ui(opts: argparse.Namespace) -> None:
         import streamlit  # noqa: F401
     except ImportError:
         print(
-            'Streamlit is not installed. Install with:\n  pip install "avro-datagen[app]"',
+            "Streamlit is not installed. Install with:\n"
+            '  pip install "avro-datagen[ui]"\n'
+            'Use "avro-datagen[app]" instead for the UI plus the Kafka producer.',
             file=sys.stderr,
         )
         sys.exit(1)
