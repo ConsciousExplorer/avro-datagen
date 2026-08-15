@@ -71,7 +71,7 @@ A list-valued `args` is passed positionally instead:
 }
 ```
 
-!!! warning "Before 0.4.0"
+!!! warning "Before 0.4.1"
     Siblings were silently ignored, so `{"faker": "numerify", "args":
     {"text": "####"}}` ran `numerify()` with its default `"###"` and produced
     three digits instead of four. `avro-datagen validate` now flags `args`,
