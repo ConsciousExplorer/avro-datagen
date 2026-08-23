@@ -41,7 +41,9 @@ class RecordResolver:
         self.schema = schema
         self.fields: list[dict[str, Any]] = schema["fields"]
         self.seed = seed
-        # Pools: field_name -> list of pre-generated values
+        # Pools: cache key -> list of pre-generated values. Process-RNG pools
+        # are keyed by field name; deterministic pools by their seed basis
+        # (see _resolve_pool).
         self.pools: dict[str, list[Any]] = {}
         # Capture "now" once so timestamps are reproducible with a seed
         self.now_ts: float = datetime.now(UTC).timestamp()
@@ -77,6 +79,7 @@ class RecordResolver:
 
     def _resolve_field(self, field: dict, record: dict) -> Any:
         """Resolve a single field's value."""
+        name = field["name"]
         props = field.get("arg.properties", {})
         avro_type = field["type"]
         # Support arg.properties nested inside the type object
@@ -85,7 +88,7 @@ class RecordResolver:
 
         # --- Priority 1: conditional rules ---
         if "rules" in props:
-            return self._resolve_rules(props["rules"], avro_type, record)
+            return self._resolve_rules(props["rules"], avro_type, record, name)
 
         # --- Priority 2: ref (copy from another field) ---
         if "ref" in props:
@@ -93,16 +96,22 @@ class RecordResolver:
 
         # --- Priority 3: arg.properties hints ---
         if props:
-            return self._resolve_with_hints(avro_type, props, record)
+            return self._resolve_with_hints(avro_type, props, record, name)
 
         # --- Priority 4: default value ---
         if "default" in field:
             return field["default"]
 
         # --- Priority 5: type-based generation ---
-        return self._resolve_type(avro_type, {}, record)
+        return self._resolve_type(avro_type, {}, record, name)
 
-    def _resolve_rules(self, rules: list[dict], avro_type: AvroType, record: dict) -> Any:
+    def _resolve_rules(
+        self,
+        rules: list[dict],
+        avro_type: AvroType,
+        record: dict,
+        field_name: str | None = None,
+    ) -> Any:
         """Evaluate conditional rules against the current record."""
         for rule in rules:
             condition = rule["when"]
@@ -112,11 +121,11 @@ class RecordResolver:
                     return None
                 if isinstance(then, dict):
                     # `then` contains arg.properties-style hints
-                    return self._resolve_with_hints(avro_type, then, record)
+                    return self._resolve_with_hints(avro_type, then, record, field_name)
                 # Literal value
                 return then
         # No rule matched — fall back to type-based generation
-        return self._resolve_type(avro_type, {}, record)
+        return self._resolve_type(avro_type, {}, record, field_name)
 
     def _evaluate_condition(self, condition: dict, record: dict) -> bool:
         """Evaluate a single condition against the current record.
@@ -224,8 +233,19 @@ class RecordResolver:
 
         return method(*args, **kwargs)
 
-    def _resolve_with_hints(self, avro_type: AvroType, props: dict, record: dict) -> Any:
+    def _resolve_with_hints(
+        self,
+        avro_type: AvroType,
+        props: dict,
+        record: dict,
+        field_name: str | None = None,
+    ) -> Any:
         """Resolve a field using arg.properties hints."""
+
+        # foreign_key and pool both claim the whole value — refuse the ambiguity
+        if "foreign_key" in props and "pool" in props:
+            where = f" on field {field_name!r}" if field_name else ""
+            raise ValueError(f"'foreign_key' and 'pool' are mutually exclusive{where}")
 
         # ref: copy from another field (with type conversion)
         if "ref" in props:
@@ -249,7 +269,7 @@ class RecordResolver:
 
         # pool: pick from a pre-generated pool of unique values
         if "pool" in props:
-            return self._resolve_pool(avro_type, props)
+            return self._resolve_pool(avro_type, props, record, field_name)
 
         # range: generate within bounds
         if "range" in props:
@@ -260,7 +280,7 @@ class RecordResolver:
             return self._resolve_pattern(props["pattern"])
 
         # length hint for arrays is handled in _resolve_type
-        return self._resolve_type(avro_type, props, record)
+        return self._resolve_type(avro_type, props, record, field_name)
 
     def _resolve_foreign_key(self, spec: dict) -> Any:
         """Pick a value from another schema's JSON-lines output file.
@@ -312,16 +332,118 @@ class RecordResolver:
                 values.append(rec[field_name])
         return values
 
-    def _resolve_pool(self, avro_type: AvroType, props: dict) -> Any:
-        """Return a value from a pre-generated pool, creating it if needed."""
-        # Use a stable key based on the logical type
-        logical = self._get_logical_type(avro_type) or "string"
-        pool_size = props["pool"]
-        pool_key = f"{logical}:{pool_size}"
+    @staticmethod
+    def _parse_pool_spec(spec: Any, field_name: str | None) -> tuple[int, str | None, str | None]:
+        """Normalize a pool hint into (size, per, seed).
+
+        Accepts the scalar form (`"pool": 50`) and the object form
+        (`"pool": {"size": 3, "per": "customerId", "seed": "accounts-v1"}`).
+        Unknown object keys are tolerated here; the validator warns on them.
+        """
+        where = f" on field {field_name!r}" if field_name else ""
+        if isinstance(spec, bool) or not isinstance(spec, (int, dict)):
+            raise ValueError(
+                f"pool{where} must be a positive integer or an object with 'size', got {spec!r}"
+            )
+        if isinstance(spec, int):
+            size, per, seed = spec, None, None
+        else:
+            size = spec.get("size")
+            per = spec.get("per")
+            seed = spec.get("seed")
+            if not isinstance(size, int) or isinstance(size, bool):
+                raise ValueError(f"pool{where} requires an integer 'size', got {size!r}")
+            if per is not None and not isinstance(per, str):
+                raise ValueError(f"pool.per{where} must be a field name string, got {per!r}")
+            if seed is not None and not isinstance(seed, str):
+                raise ValueError(f"pool.seed{where} must be a string, got {seed!r}")
+        if size <= 0:
+            raise ValueError(f"pool{where} size must be positive, got {size}")
+        return size, per, seed
+
+    def _resolve_pool(
+        self,
+        avro_type: AvroType,
+        props: dict,
+        record: dict,
+        field_name: str | None,
+    ) -> Any:
+        """Return a value from a pre-generated pool, creating it if needed.
+
+        With `per`, one pool of `size` members is kept per distinct value of
+        the `per` field, and membership is a pure function of (seed, key) —
+        the same key maps to the same members in every process, regardless of
+        the process seed. With `seed` alone, membership is a pure function of
+        the seed string, so any schema pointing at the same seed shares the
+        same universe of values. With neither (including the scalar form),
+        members come from the process RNG, one pool per field.
+
+        The per-record choice among members always uses the process RNG, so
+        `seed` reproducibility and null/branch behavior are unaffected.
+        """
+        size, per, pool_seed = self._parse_pool_spec(props["pool"], field_name)
+        logical = self._get_logical_type(avro_type)
+
+        if per is not None:
+            # Default universe identity: the field name — consistent across
+            # processes with zero configuration when schemas agree on names.
+            basis = pool_seed if pool_seed is not None else str(field_name)
+            if per not in record:
+                raise ValueError(
+                    f"pool.per field {per!r} is not yet resolved — declare it before {field_name!r}"
+                )
+            basis = f"{basis}:{record[per]}"
+            pool_key = f"seed:{basis}:{logical}:{size}"
+        elif pool_seed is not None:
+            basis = pool_seed
+            pool_key = f"seed:{basis}:{logical}:{size}"
+        else:
+            basis = None
+            # Shape is part of the key: nested records share this cache, and a
+            # same-named field with a different type or size must not inherit
+            # another field's pool.
+            pool_key = f"field:{field_name}:{logical}:{size}"
 
         if pool_key not in self.pools:
-            self.pools[pool_key] = [self._generate_for_logical(logical) for _ in range(pool_size)]
+            rng = random.Random(basis) if basis is not None else None
+            self.pools[pool_key] = [
+                self._generate_pool_member(avro_type, logical, rng) for _ in range(size)
+            ]
         return random.choice(self.pools[pool_key])
+
+    def _generate_pool_member(
+        self,
+        avro_type: AvroType,
+        logical: str | None,
+        rng: random.Random | None,
+    ) -> Any:
+        """Generate one pool member for the field's (logical) type.
+
+        Covers the cases _resolve_type handles outside _generate_for_logical:
+        decimal (needs precision/scale from the type object), fixed (needs
+        size), and plain primitives.
+        """
+        type_obj = self._unwrap_type_object(avro_type)
+        if logical == "decimal":
+            return self._generate_decimal(type_obj or {}, rng)
+        if logical is not None:
+            return self._generate_for_logical(logical, rng)
+        base = self._get_base_type(avro_type) or "string"
+        if base == "fixed":
+            source: Any = rng if rng is not None else random
+            return source.randbytes((type_obj or {}).get("size", 1)).hex()
+        return self._generate_primitive(base, rng)
+
+    @staticmethod
+    def _unwrap_type_object(avro_type: AvroType) -> dict[str, Any] | None:
+        """Return the dict form of a type, unwrapping unions."""
+        if isinstance(avro_type, dict):
+            return avro_type
+        if isinstance(avro_type, list):
+            for branch in avro_type:
+                if isinstance(branch, dict):
+                    return branch
+        return None
 
     def _resolve_range(self, avro_type: AvroType, range_spec: dict) -> Any:
         """Generate a value within a range."""
@@ -569,12 +691,18 @@ class RecordResolver:
                 i += 1
         return chars
 
-    def _resolve_type(self, avro_type: AvroType, props: dict, record: dict) -> Any:
+    def _resolve_type(
+        self,
+        avro_type: AvroType,
+        props: dict,
+        record: dict,
+        field_name: str | None = None,
+    ) -> Any:
         """Generate a value based purely on the Avro type."""
 
         # Union type: ["null", "string"] etc.
         if isinstance(avro_type, list):
-            return self._resolve_union(avro_type, props, record)
+            return self._resolve_union(avro_type, props, record, field_name)
 
         # Complex type object: {"type": "string", "logicalType": "uuid"}
         if isinstance(avro_type, dict):
@@ -584,7 +712,7 @@ class RecordResolver:
             if inner_type == "record":
                 return self._resolve_record(avro_type)
             if inner_type == "array":
-                return self._resolve_array(avro_type, props, record)
+                return self._resolve_array(avro_type, props, record, field_name)
             if inner_type == "map":
                 return self._resolve_map(avro_type, props, record)
             if inner_type == "enum":
@@ -608,7 +736,13 @@ class RecordResolver:
 
         return None
 
-    def _resolve_union(self, branches: list, props: dict, record: dict) -> Any:
+    def _resolve_union(
+        self,
+        branches: list,
+        props: dict,
+        record: dict,
+        field_name: str | None = None,
+    ) -> Any:
         """Resolve a union type.
 
         Supports ``null_probability`` in arg.properties to control how often
@@ -623,9 +757,9 @@ class RecordResolver:
             if random.random() < null_prob:
                 return None
             branch = random.choice(non_null)
-            return self._resolve_type(branch, props, record)
+            return self._resolve_type(branch, props, record, field_name)
 
-        return self._resolve_type(random.choice(branches), props, record)
+        return self._resolve_type(random.choice(branches), props, record, field_name)
 
     def _resolve_record(self, schema: dict) -> dict:
         """Recursively resolve a nested record type."""
@@ -655,7 +789,13 @@ class RecordResolver:
             return random.randint(length_spec["min"], length_spec["max"])
         return random.randint(default_min, default_max)
 
-    def _resolve_array(self, schema: dict, props: dict, record: dict) -> list:
+    def _resolve_array(
+        self,
+        schema: dict,
+        props: dict,
+        record: dict,
+        field_name: str | None = None,
+    ) -> list:
         """Resolve an array type."""
         items_type = schema["items"]
         length = self._resolve_length(props)
@@ -664,9 +804,9 @@ class RecordResolver:
         result = []
         for _ in range(length):
             if items_props:
-                result.append(self._resolve_with_hints(items_type, items_props, record))
+                result.append(self._resolve_with_hints(items_type, items_props, record, field_name))
             else:
-                result.append(self._resolve_type(items_type, {}, record))
+                result.append(self._resolve_type(items_type, {}, record, field_name))
         return result
 
     def _resolve_map(self, schema: dict, props: dict, record: dict) -> dict:
@@ -680,15 +820,20 @@ class RecordResolver:
             result[key] = self._resolve_type(values_type, {}, record)
         return result
 
-    def _generate_for_logical(self, logical: str) -> Any:
-        """Generate a value for a known logical type."""
+    def _generate_for_logical(self, logical: str, rng: random.Random | None = None) -> Any:
+        """Generate a value for a known logical type.
+
+        When `rng` is given, all randomness is drawn from it so the value is
+        a pure function of that instance's seed (deterministic pool members);
+        otherwise the process RNG is used so generation stays seed-controlled.
+        """
+        source: Any = rng if rng is not None else random
         if logical == "uuid":
-            # Use random module so uuid generation is seed-controlled
             return (
-                f"{random.getrandbits(32):08x}-{random.getrandbits(16):04x}-"
-                f"{0x4000 | random.getrandbits(12):04x}-"
-                f"{0x8000 | random.getrandbits(14):04x}-"
-                f"{random.getrandbits(48):012x}"
+                f"{source.getrandbits(32):08x}-{source.getrandbits(16):04x}-"
+                f"{0x4000 | source.getrandbits(12):04x}-"
+                f"{0x8000 | source.getrandbits(14):04x}-"
+                f"{source.getrandbits(48):012x}"
             )
         if logical == "timestamp-millis":
             return int(self.now_ts * 1000)
@@ -699,51 +844,58 @@ class RecordResolver:
         if logical == "date":
             # Days since epoch — random date in the last ~5 years
             today_days = int(self.now_ts // 86400)
-            return random.randint(today_days - 1825, today_days)
+            return source.randint(today_days - 1825, today_days)
         if logical == "time-millis":
             # Milliseconds after midnight (0 to 86_400_000)
-            return random.randint(0, 86_400_000 - 1)
+            return source.randint(0, 86_400_000 - 1)
         if logical == "time-micros":
             # Microseconds after midnight (0 to 86_400_000_000)
-            return random.randint(0, 86_400_000_000 - 1)
+            return source.randint(0, 86_400_000_000 - 1)
         # Unknown logical type — fall back to nothing useful
         return None
 
-    def _generate_decimal(self, avro_type: dict) -> str:
+    def _generate_decimal(self, avro_type: dict, rng: random.Random | None = None) -> str:
         """Generate a decimal value as a string, respecting precision and scale.
 
         Returned as a string since JSON has no native decimal type — consumers
-        should parse with Decimal(value) to preserve precision.
+        should parse with Decimal(value) to preserve precision. `rng` behaves
+        as in _generate_for_logical.
         """
+        source: Any = rng if rng is not None else random
         precision = avro_type.get("precision", 10)
         scale = avro_type.get("scale", 0)
         # Precision = total digits, scale = digits after decimal point
         # Integer part can have at most (precision - scale) digits
         int_digits = max(precision - scale, 1)
         max_int = 10**int_digits - 1
-        integer_part = random.randint(0, max_int)
+        integer_part = source.randint(0, max_int)
         if scale > 0:
             max_frac = 10**scale - 1
-            frac_part = random.randint(0, max_frac)
+            frac_part = source.randint(0, max_frac)
             return f"{integer_part}.{frac_part:0{scale}d}"
         return str(integer_part)
 
-    def _generate_primitive(self, type_name: str) -> Any:
-        """Generate a value for a primitive Avro type."""
+    def _generate_primitive(self, type_name: str, rng: random.Random | None = None) -> Any:
+        """Generate a value for a primitive Avro type.
+
+        `rng` behaves as in _generate_for_logical: a dedicated instance makes
+        the value deterministic, None uses the process RNG.
+        """
+        source: Any = rng if rng is not None else random
         if type_name == "null":
             return None
         if type_name == "boolean":
-            return random.choice([True, False])
+            return source.choice([True, False])
         if type_name == "int":
-            return random.randint(0, 10000)
+            return source.randint(0, 10000)
         if type_name == "long":
-            return random.randint(0, 1_000_000)
+            return source.randint(0, 1_000_000)
         if type_name == "float" or type_name == "double":
-            return round(random.uniform(0, 10000), 2)
+            return round(source.uniform(0, 10000), 2)
         if type_name == "string":
-            return f"{random.getrandbits(48):012x}"
+            return f"{source.getrandbits(48):012x}"
         if type_name == "bytes":
-            return random.randbytes(16).hex()
+            return source.randbytes(16).hex()
         return None
 
     def _get_logical_type(self, avro_type: AvroType) -> str | None:

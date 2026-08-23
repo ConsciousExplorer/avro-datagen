@@ -135,7 +135,89 @@ foreign-key-like fields (e.g. customer IDs).
 ```
 
 This generates 50 unique UUIDs once, then picks randomly from that set for
-every record. Creates realistic cardinality.
+every record. Creates realistic cardinality. Each field gets its own pool,
+and the per-record pick is driven by the process RNG, so `--seed` output
+stays reproducible.
+
+### Object form: `size`, `per`, `seed`
+
+`pool` also accepts an object for correlated and cross-process-stable pools:
+
+```json
+{
+  "name": "accountId",
+  "type": { "type": "string", "logicalType": "uuid" },
+  "arg.properties": { "pool": { "size": 3, "per": "customerId" } }
+}
+```
+
+| Key | Meaning |
+|-----|---------|
+| `size` | Number of members in the pool (required) |
+| `per` | Keep one pool per distinct value of this field -- each record picks from the pool belonging to its own `per` value |
+| `seed` | Universe identity string -- pool members become a pure function of this string |
+
+### Keyed pools (`per`)
+
+With `per`, a given customer always draws from the *same small set* of
+accounts, so parent/child fields stay correlated. Membership is a pure
+function of the key (seeded by the field name unless `seed` is given), so
+the same customer maps to the same accounts in every process -- even across
+producers running with different `--seed` values, with zero coordination.
+
+`per` must reference a field declared *before* the pooled field (the same
+declaration-order constraint as `ref` and `rules`).
+
+### Seeded pools (`seed`)
+
+Without `seed`, pool members come from the process RNG, so differently
+seeded producers generate disjoint universes. With `seed`, members are
+derived only from the seed string (plus the `per` key where applicable) --
+never from the process RNG, field order, or creation timing:
+
+```json
+{
+  "name": "customerId",
+  "type": { "type": "string", "logicalType": "uuid" },
+  "arg.properties": { "pool": { "size": 50, "seed": "customers-v1" } }
+},
+{
+  "name": "accountId",
+  "type": { "type": "string", "logicalType": "uuid" },
+  "arg.properties": { "pool": { "size": 3, "per": "customerId", "seed": "accounts-v1" } }
+}
+```
+
+Any schema, any producer, any process seed: the same seed string yields the
+identical universe. Because the seed string (not the field name) is the
+universe identity, `customerId` in one schema and `userId` in another can
+share a universe by pointing at the same string. Rotate the string
+(`"customers-v2"`) to version the universe deliberately.
+
+!!! tip "Cross-source referential consistency"
+    Give every source schema the same seeded parent pool and the same keyed
+    child pool, and independently seeded producers emit the same customers
+    with the same accounts -- full referential consistency with no shared
+    state and no fixture files. The per-record *choice* still follows the
+    process RNG, so `--seed` reproducibility is preserved.
+
+### Caveats
+
+- **Temporal members are clock-anchored.** `timestamp-*` and `iso-timestamp`
+  pool members are derived from the run's pinned "now" (all members
+  identical), and `date` members are anchored to the current day. The
+  cross-process membership guarantee therefore covers `uuid`, times,
+  decimals, and primitives; for date/timestamp pools it only holds between
+  runs that pin the clock the same way (the CLI does this when `--seed` is
+  given).
+- **One pool is cached per distinct `per` value.** Keep `per` pointed at a
+  bounded-cardinality field (itself pooled, `options`, etc.) -- keying on a
+  high-cardinality field grows memory without ever reusing a pool.
+- **A null `per` value is a key like any other.** If the `per` field is a
+  nullable union, all records where it resolves to null share one pool.
+
+`pool` and `foreign_key` are mutually exclusive on a field -- both claim the
+whole value, and combining them raises an error.
 
 ## pattern
 

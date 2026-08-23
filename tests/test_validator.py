@@ -235,6 +235,71 @@ class TestRefValidation:
         assert validate(schema) == []
 
 
+class TestPoolValidation:
+    def _field(self, name, pool, avro_type=None):
+        return {
+            "name": name,
+            "type": avro_type or {"type": "string", "logicalType": "uuid"},
+            "arg.properties": {"pool": pool},
+        }
+
+    def _schema(self, *fields):
+        return {"type": "record", "name": "T", "fields": list(fields)}
+
+    def test_scalar_pool_ok(self):
+        assert validate(self._schema(self._field("x", 5))) == []
+
+    def test_object_pool_ok(self):
+        schema = self._schema(
+            self._field("customerId", {"size": 5, "seed": "customers-v1"}),
+            self._field("accountId", {"size": 3, "per": "customerId", "seed": "accounts-v1"}),
+        )
+        assert validate(schema) == []
+
+    def test_pool_wrong_type(self):
+        with pytest.raises(SchemaValidationError, match="pool"):
+            validate(self._schema(self._field("x", "big")))
+
+    def test_object_pool_missing_size(self):
+        with pytest.raises(SchemaValidationError, match="size"):
+            validate(self._schema(self._field("x", {"per": "y"})))
+
+    def test_object_pool_non_positive_size(self):
+        with pytest.raises(SchemaValidationError, match="size"):
+            validate(self._schema(self._field("x", {"size": 0})))
+
+    def test_pool_per_undeclared_field(self):
+        schema = self._schema(self._field("accountId", {"size": 3, "per": "customerId"}))
+        with pytest.raises(SchemaValidationError, match="customerId"):
+            validate(schema)
+
+    def test_pool_per_later_field(self):
+        schema = self._schema(
+            self._field("accountId", {"size": 3, "per": "customerId"}),
+            {"name": "customerId", "type": "string"},
+        )
+        with pytest.raises(SchemaValidationError, match="customerId"):
+            validate(schema)
+
+    def test_pool_unknown_key_warns(self):
+        warnings = validate(self._schema(self._field("x", {"size": 3, "scope": "y"})))
+        assert any("scope" in w for w in warnings)
+
+    def test_pool_and_foreign_key_mutually_exclusive(self):
+        schema = self._schema(
+            {
+                "name": "x",
+                "type": "string",
+                "arg.properties": {
+                    "pool": 5,
+                    "foreign_key": {"file": "out.jsonl", "field": "id"},
+                },
+            }
+        )
+        with pytest.raises(SchemaValidationError, match="mutually exclusive"):
+            validate(schema)
+
+
 class TestRulesValidation:
     def test_rule_references_nonexistent_field(self):
         schema = {

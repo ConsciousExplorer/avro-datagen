@@ -1,6 +1,7 @@
 """Tests for the field resolver engine."""
 
 import random
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -602,6 +603,340 @@ class TestPool:
         assert len(unique) <= 5
         # But we should see reuse
         assert len(values) > len(unique)
+
+    def test_same_type_and_size_fields_get_distinct_pools(self):
+        """Two fields with the same logical type and pool size must not share a pool."""
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "a",
+                    "type": {"type": "string", "logicalType": "uuid"},
+                    "arg.properties": {"pool": 5},
+                },
+                {
+                    "name": "b",
+                    "type": {"type": "string", "logicalType": "uuid"},
+                    "arg.properties": {"pool": 5},
+                },
+            ],
+        }
+        random.seed(42)
+        resolver = RecordResolver(schema)
+        a_values, b_values = set(), set()
+        for _ in range(100):
+            record = resolver.generate()
+            a_values.add(record["a"])
+            b_values.add(record["b"])
+        assert a_values.isdisjoint(b_values)
+
+    def test_pool_on_plain_string_field(self):
+        """A pool on a string field without a logicalType generates real strings."""
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {"name": "x", "type": "string", "arg.properties": {"pool": 5}},
+            ],
+        }
+        random.seed(42)
+        resolver = RecordResolver(schema)
+        values = [resolver.generate()["x"] for _ in range(30)]
+        assert all(isinstance(v, str) for v in values)
+        assert len(set(values)) <= 5
+
+    def test_nested_field_with_same_name_but_different_shape_gets_own_pool(self):
+        """A nested record field sharing a name with a parent field must not
+        inherit the parent's pool when the type or size differs."""
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "id",
+                    "type": {"type": "string", "logicalType": "uuid"},
+                    "arg.properties": {"pool": 2},
+                },
+                {
+                    "name": "child",
+                    "type": {
+                        "type": "record",
+                        "name": "Child",
+                        "fields": [
+                            {"name": "id", "type": "long", "arg.properties": {"pool": 10}},
+                        ],
+                    },
+                },
+            ],
+        }
+        random.seed(42)
+        resolver = RecordResolver(schema)
+        for _ in range(20):
+            record = resolver.generate()
+            assert isinstance(record["child"]["id"], int)
+
+    def test_pool_on_decimal_field(self):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "amount",
+                    "type": {
+                        "type": "bytes",
+                        "logicalType": "decimal",
+                        "precision": 6,
+                        "scale": 2,
+                    },
+                    "arg.properties": {"pool": 4},
+                },
+            ],
+        }
+        random.seed(42)
+        resolver = RecordResolver(schema)
+        values = [resolver.generate()["amount"] for _ in range(30)]
+        assert all(re.match(r"^\d+\.\d{2}$", v) for v in values)
+        assert len(set(values)) <= 4
+
+    def test_pool_on_fixed_field(self):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "digest",
+                    "type": {"type": "fixed", "name": "Hash", "size": 8},
+                    "arg.properties": {"pool": 4},
+                },
+            ],
+        }
+        random.seed(42)
+        resolver = RecordResolver(schema)
+        values = [resolver.generate()["digest"] for _ in range(30)]
+        assert all(isinstance(v, str) and len(v) == 16 for v in values)
+        assert len(set(values)) <= 4
+
+    def test_pool_and_foreign_key_mutually_exclusive(self):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "x",
+                    "type": "string",
+                    "arg.properties": {
+                        "pool": 5,
+                        "foreign_key": {"file": "out.jsonl", "field": "id"},
+                    },
+                },
+            ],
+        }
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            RecordResolver(schema).generate()
+
+    def test_pool_invalid_spec_raises(self):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {"name": "x", "type": "string", "arg.properties": {"pool": "big"}},
+            ],
+        }
+        with pytest.raises(ValueError, match="pool"):
+            RecordResolver(schema).generate()
+
+
+class TestKeyedPool:
+    """pool: {size, per} — one pool of `size` values per distinct `per` value."""
+
+    def _schema(self, customer_hints, account_pool):
+        return {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "customerId",
+                    "type": "string",
+                    "arg.properties": customer_hints,
+                },
+                {
+                    "name": "accountId",
+                    "type": {"type": "string", "logicalType": "uuid"},
+                    "arg.properties": {"pool": account_pool},
+                },
+            ],
+        }
+
+    def _collect_mapping(self, schema, process_seed, n=200):
+        """customerId -> set of accountIds observed across n records."""
+        random.seed(process_seed)
+        resolver = RecordResolver(schema)
+        mapping: dict = {}
+        for _ in range(n):
+            record = resolver.generate()
+            mapping.setdefault(record["customerId"], set()).add(record["accountId"])
+        return mapping
+
+    def test_values_bounded_per_key(self):
+        """Each key only ever draws from its own member set of `size` values."""
+        schema = self._schema({"pool": 5}, {"size": 3, "per": "customerId"})
+        mapping = self._collect_mapping(schema, process_seed=42)
+        assert len(mapping) > 1
+        for accounts in mapping.values():
+            assert 1 <= len(accounts) <= 3
+
+    def test_distinct_keys_get_distinct_pools(self):
+        schema = self._schema(
+            {"options": ["cust-1", "cust-2"]},
+            {"size": 3, "per": "customerId"},
+        )
+        mapping = self._collect_mapping(schema, process_seed=42)
+        assert mapping["cust-1"].isdisjoint(mapping["cust-2"])
+
+    def test_membership_identical_across_process_seeds(self):
+        """Same key -> same members, even in independently seeded processes."""
+        schema = self._schema(
+            {"options": ["cust-1", "cust-2"]},
+            {"size": 3, "per": "customerId"},
+        )
+        mapping_a = self._collect_mapping(schema, process_seed=1)
+        mapping_b = self._collect_mapping(schema, process_seed=2)
+        assert mapping_a == mapping_b
+
+    def test_unresolved_per_field_raises(self):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {
+                    "name": "accountId",
+                    "type": {"type": "string", "logicalType": "uuid"},
+                    "arg.properties": {"pool": {"size": 3, "per": "customerId"}},
+                },
+                {"name": "customerId", "type": "string"},
+            ],
+        }
+        with pytest.raises(ValueError, match="not yet resolved"):
+            RecordResolver(schema).generate()
+
+
+class TestSeededPool:
+    """pool: {size, seed} — members are a pure function of the seed string."""
+
+    def _pool_field(self, name, pool):
+        return {
+            "name": name,
+            "type": {"type": "string", "logicalType": "uuid"},
+            "arg.properties": {"pool": pool},
+        }
+
+    def _collect(self, schema, process_seed, field, n=100):
+        random.seed(process_seed)
+        resolver = RecordResolver(schema)
+        return {resolver.generate()[field] for _ in range(n)}
+
+    def test_members_identical_across_process_seeds(self):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [self._pool_field("customerId", {"size": 5, "seed": "customers-v1"})],
+        }
+        members_a = self._collect(schema, process_seed=1, field="customerId")
+        members_b = self._collect(schema, process_seed=2, field="customerId")
+        assert members_a == members_b
+        assert len(members_a) == 5
+
+    def test_different_seeds_different_universes(self):
+        schema_v1 = {
+            "type": "record",
+            "name": "T",
+            "fields": [self._pool_field("customerId", {"size": 5, "seed": "customers-v1"})],
+        }
+        schema_v2 = {
+            "type": "record",
+            "name": "T",
+            "fields": [self._pool_field("customerId", {"size": 5, "seed": "customers-v2"})],
+        }
+        members_v1 = self._collect(schema_v1, process_seed=1, field="customerId")
+        members_v2 = self._collect(schema_v2, process_seed=1, field="customerId")
+        assert members_v1.isdisjoint(members_v2)
+
+    def test_members_independent_of_field_order(self):
+        """Seeded pool members do not depend on the process RNG state at creation."""
+        plain = {
+            "type": "record",
+            "name": "T",
+            "fields": [self._pool_field("customerId", {"size": 5, "seed": "customers-v1"})],
+        }
+        with_noise = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                {"name": "noise", "type": {"type": "string", "logicalType": "uuid"}},
+                self._pool_field("customerId", {"size": 5, "seed": "customers-v1"}),
+            ],
+        }
+        members_plain = self._collect(plain, process_seed=42, field="customerId")
+        members_noise = self._collect(with_noise, process_seed=42, field="customerId")
+        assert members_plain == members_noise
+
+    def test_same_seed_shares_universe_across_field_names(self):
+        """The seed string, not the field name, is the universe identity."""
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                self._pool_field("customerId", {"size": 5, "seed": "customers-v1"}),
+                self._pool_field("userId", {"size": 5, "seed": "customers-v1"}),
+            ],
+        }
+        random.seed(42)
+        resolver = RecordResolver(schema)
+        customers, users = set(), set()
+        for _ in range(100):
+            record = resolver.generate()
+            customers.add(record["customerId"])
+            users.add(record["userId"])
+        assert customers == users
+
+    def test_keyed_and_seeded_compose(self):
+        """The transaction-aggregator case: both parent and child fully deterministic."""
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [
+                self._pool_field("customerId", {"size": 5, "seed": "customers-v1"}),
+                self._pool_field(
+                    "accountId", {"size": 3, "per": "customerId", "seed": "accounts-v1"}
+                ),
+            ],
+        }
+
+        def collect_mapping(process_seed):
+            random.seed(process_seed)
+            resolver = RecordResolver(schema)
+            mapping: dict = {}
+            for _ in range(300):
+                record = resolver.generate()
+                mapping.setdefault(record["customerId"], set()).add(record["accountId"])
+            return mapping
+
+        mapping_a = collect_mapping(1)
+        mapping_b = collect_mapping(2)
+        assert mapping_a == mapping_b
+
+    def test_object_form_without_seed_or_per_matches_scalar_semantics(self):
+        schema = {
+            "type": "record",
+            "name": "T",
+            "fields": [self._pool_field("cid", {"size": 5})],
+        }
+        random.seed(42)
+        resolver = RecordResolver(schema)
+        values = [resolver.generate()["cid"] for _ in range(50)]
+        assert len(set(values)) <= 5
+        assert len(values) > len(set(values))
 
 
 class TestPattern:
