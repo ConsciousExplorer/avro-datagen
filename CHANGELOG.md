@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0](https://github.com/ConsciousExplorer/avro-datagen/compare/v0.4.2...v0.5.0) (2026-08-23)
+
+
+### Added
+
+* **resolver:** keyed and seeded pools for correlated fields ([#29](https://github.com/ConsciousExplorer/avro-datagen/issues/29)) ([7fa54ee](https://github.com/ConsciousExplorer/avro-datagen/commit/7fa54eef76eb19427a61e5a9a223e7384a54c635))
+
 ## [0.4.2](https://github.com/ConsciousExplorer/avro-datagen/compare/v0.4.1...v0.4.2) (2026-08-15)
 
 
