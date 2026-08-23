@@ -12,6 +12,8 @@ Validates:
 - options entries can be encoded as the field's Avro type
 - Rule conditions reference declared fields
 - ref targets exist and appear before the referencing field
+- pool hints: scalar or {size, per, seed} object form, `per` targets appear
+  before the pooled field, and pool/foreign_key mutual exclusivity
 
 Validation is not mandatory -- generate() still works with any schema the
 resolver accepts. Use validate() before generation for clearer errors, or call
@@ -64,6 +66,9 @@ _KNOWN_HINT_KEYS = {
 # Keys that configure a faker call but do nothing on their own
 _FAKER_SIBLING_KEYS = ("args", "kwargs", "locale")
 _FAKER_SPEC_KEYS = {"method", "args", "kwargs", "locale"}
+
+# Keys allowed in the object form of a pool hint
+_POOL_SPEC_KEYS = {"size", "per", "seed"}
 
 # Relative/absolute forms accepted by RecordResolver._parse_time_offset,
 # _parse_date_offset and _parse_time_of_day respectively.
@@ -451,6 +456,51 @@ def _validate_range(
         )
 
 
+def _validate_pool(
+    spec: Any,
+    path: str,
+    seen_fields: list[str],
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Check a pool hint: scalar size, or {size, per, seed} object form.
+
+    Mirrors RecordResolver._parse_pool_spec, plus the declaration-order check
+    on `per` that the resolver can only make at generation time.
+    """
+    if isinstance(spec, bool) or not isinstance(spec, (int, dict)):
+        errors.append(f"{path}.pool: must be a positive integer or an object with 'size'")
+        return
+
+    if isinstance(spec, int):
+        if spec <= 0:
+            errors.append(f"{path}.pool: size must be positive, got {spec}")
+        return
+
+    for key in spec:
+        if key not in _POOL_SPEC_KEYS:
+            warnings.append(f"{path}.pool: unknown key {key!r}")
+
+    size = spec.get("size")
+    if size is None:
+        errors.append(f"{path}.pool: object form requires 'size'")
+    elif not isinstance(size, int) or isinstance(size, bool) or size <= 0:
+        errors.append(f"{path}.pool: 'size' must be a positive integer, got {size!r}")
+
+    per = spec.get("per")
+    if per is not None:
+        if not isinstance(per, str):
+            errors.append(f"{path}.pool: 'per' must be a field name string")
+        elif per not in seen_fields:
+            errors.append(
+                f"{path}.pool: per field {per!r} does not exist or is declared after this field"
+            )
+
+    seed = spec.get("seed")
+    if seed is not None and not isinstance(seed, str):
+        errors.append(f"{path}.pool: 'seed' must be a string")
+
+
 def _validate_options(
     options: Any,
     avro_type: Any,
@@ -530,6 +580,12 @@ def _validate_arg_properties(
 
     if "options" in props:
         _validate_options(props["options"], avro_type, path, errors, warnings)
+
+    if "pool" in props:
+        _validate_pool(props["pool"], path, seen_fields, errors, warnings)
+        # Both hints claim the whole value — the resolver refuses the combination
+        if "foreign_key" in props:
+            errors.append(f"{path}: 'foreign_key' and 'pool' are mutually exclusive")
 
     # items: hints applied to each element of an array
     if "items" in props:

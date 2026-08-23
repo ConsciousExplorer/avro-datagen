@@ -52,7 +52,7 @@ When `arg.properties` is present but doesn't contain `rules` or `ref`:
 | 3b | `template` | String interpolation: `"Purchase at {merchantName}"` |
 | 3c | `faker` | Faker provider: `"name"`, `"email"`, `{"method": "bothify", "args": ["##-??"]}` |
 | 3d | `options` | Random choice from list (duplicates = weighting) |
-| 3e | `pool` | Pick from N pre-generated unique values |
+| 3e | `pool` | Pick from N pre-generated unique values (object form scopes per key field / pins a seed) |
 | 3f | `range` | Numeric or timestamp bounds |
 | 3g | `pattern` | Regex-like: `"[A-Z]{3}-[0-9]{4}"` |
 

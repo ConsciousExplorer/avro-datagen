@@ -139,7 +139,7 @@ Custom properties go on the **field object** (sibling to `name` and `type`):
 |-----|-----------|---------|
 | `options` | `any[]` | Pick a random element (duplicates = weighting) |
 | `range` | `{min, max}` | Numeric or timestamp range |
-| `pool` | `int` | Pre-generate N unique values, reuse across records |
+| `pool` | `int \| {size, per, seed}` | Pre-generate N unique values, reuse across records; object form scopes the pool per key field and pins membership to a seed string |
 | `pattern` | `string` | Regex-like string generation |
 | `faker` | `string \| dict` | Faker provider — string for simple, dict for `{method, args, kwargs, locale}` |
 | `ref` | `string` | Copy value from another field (with type conversion) |
