@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 from avro_datagen.generator import generate
@@ -12,6 +13,25 @@ from avro_datagen.json_format import to_human_json
 from avro_datagen.resolver import load_schema
 
 _PKG_DIR = Path(__file__).parent
+
+
+def _parse_now(value: str) -> datetime | float:
+    """argparse type for --now: epoch seconds or a timezone-aware ISO-8601 datetime."""
+    try:
+        return float(value)
+    except ValueError:
+        pass
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"expected epoch seconds or an ISO-8601 datetime, got {value!r}"
+        ) from None
+    if dt.utcoffset() is None:
+        raise argparse.ArgumentTypeError(
+            f"{value!r} has no UTC offset; add one, e.g. {value}Z or {value}+00:00"
+        )
+    return dt
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -41,6 +61,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Random seed for reproducible output",
+    )
+    gen.add_argument(
+        "--now",
+        type=_parse_now,
+        default=None,
+        help=(
+            "Clock anchor for relative times ('now', '-30d', 'today'): epoch seconds "
+            "or an ISO-8601 datetime with a UTC offset. Defaults to 2026-01-01T00:00Z "
+            "with --seed, otherwise the current time."
+        ),
     )
     gen.add_argument(
         "--pretty",
@@ -145,7 +175,7 @@ def _run_generate(opts: argparse.Namespace) -> None:
     human_schema = load_schema(opts.schema) if opts.json_format == "human" else None
 
     try:
-        for record in generate(opts.schema, opts.count, opts.seed):
+        for record in generate(opts.schema, opts.count, opts.seed, opts.now):
             start = time.monotonic()
             if human_schema is not None:
                 record = to_human_json(record, human_schema)

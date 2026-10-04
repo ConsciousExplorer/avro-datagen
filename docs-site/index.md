@@ -74,7 +74,7 @@ for r in generate('schemas/transaction.avsc', count=3):
 ```
 src/avro_datagen/
   resolver.py             core engine: walks Avro schema, resolves fields
-  generator.py            public API: generate(schema_path, count, seed)
+  generator.py            public API: generate(schema_path, count, seed, now)
   cli.py                  CLI + UI entry point (generate, ui subcommands)
   producer.py             Kafka producer (confluent-kafka)
   app.py                  Streamlit web UI (bundled in package)

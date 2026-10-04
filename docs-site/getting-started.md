@@ -101,6 +101,7 @@ avro-datagen generate -s schema.avsc -c 10
 | `--schema` | `-s` | required | Path to `.avsc` file |
 | `--count` | `-c` | `10` | Number of records. `0` = infinite |
 | `--seed` | | random | Seed for reproducible output |
+| `--now` | | see [Seed behaviour](#seed-behaviour) | Clock anchor: epoch seconds or ISO-8601 with a UTC offset |
 | `--rate` | `-r` | unlimited | Records per second |
 | `--pretty` | `-p` | off | Pretty-print JSON |
 | `--json-format` | | `wire` | `wire` or `human` — see below |
@@ -183,6 +184,11 @@ for record in generate("schemas/transaction.avsc", count=100):
 # Seeded, deterministic
 records = list(generate("schemas/transaction.avsc", count=10, seed=42))
 
+# Seeded, but anchored to a chosen "now" instead of the fixed epoch
+from datetime import UTC, datetime
+anchor = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+records = list(generate("schemas/transaction.avsc", count=10, seed=42, now=anchor))
+
 # Infinite generator
 for record in generate("schemas/transaction.avsc", count=0):
     process(record)
@@ -194,10 +200,32 @@ When a seed is provided:
 
 - `random.seed()` controls all randomness (options, ranges, pools, etc.)
 - `Faker.seed_instance()` controls all Faker output (names, emails, etc.)
-- Timestamps pin to a fixed epoch (`2026-01-01T00:00:00Z`)
+- Timestamps pin to a fixed epoch (`2026-01-01T00:00:00Z`) unless `now` is given
 - Output is fully deterministic across runs
 
 Without a seed, timestamps use the current time and all values are random.
+
+### Anchoring the clock with `now`
+
+Relative bounds (`"now"`, `"-30d"`, `"today"`, `"+7d"`) and un-hinted
+`timestamp-*` / `date` fields resolve against a single "now". Pass `now=` (a
+timezone-aware `datetime` or epoch seconds) or `--now` (epoch seconds or
+ISO-8601 with a UTC offset, e.g. `2026-10-04T00:00:00Z`) to choose it:
+
+```bash
+avro-datagen -s schemas/transaction.avsc -c 5 --seed 42 --now 2026-10-04T00:00:00Z
+```
+
+The anchor is chosen in this order:
+
+1. An explicit `now` / `--now`
+2. `2026-01-01T00:00:00Z` when a seed is given
+3. The current time
+
+Reproducibility is therefore the pair `(seed, now)`: the same seed with the
+same `now` gives identical records. Naive datetimes are rejected rather than
+guessed at. Seeded pools keep their membership whatever `now` is, except for
+temporal members (`timestamp-*`, `date`), which are derived from it.
 
 ## Development setup
 

@@ -73,6 +73,32 @@ class TestCLI:
             main(["generate"])
 
 
+class TestNowFlag:
+    # 2026-10-04T00:00:00Z as epoch milliseconds, derived by hand.
+    NOW_MS = 1_791_072_000_000
+    THIRTY_DAYS_MS = 30 * 86_400 * 1000
+
+    def _timestamps(self, capsys, now: str) -> list[int]:
+        main(["--schema", TXN_SCHEMA, "--count", "50", "--seed", "42", "--now", now])
+        lines = capsys.readouterr().out.strip().split("\n")
+        return [json.loads(line)["timestamp"] for line in lines]
+
+    def test_iso_8601_anchors_timestamps(self, capsys):
+        for ts in self._timestamps(capsys, "2026-10-04T00:00:00Z"):
+            assert self.NOW_MS - self.THIRTY_DAYS_MS <= ts <= self.NOW_MS
+
+    def test_epoch_seconds_match_the_iso_form(self, capsys):
+        iso = self._timestamps(capsys, "2026-10-04T00:00:00+00:00")
+        epoch = self._timestamps(capsys, "1791072000")
+        assert epoch == iso
+
+    @pytest.mark.parametrize("bad", ["2026-10-04T00:00:00", "not-a-date"])
+    def test_rejects_naive_or_malformed_values(self, bad, capsys):
+        with pytest.raises(SystemExit):
+            main(["--schema", TXN_SCHEMA, "--count", "1", "--now", bad])
+        assert "argument --now" in capsys.readouterr().err
+
+
 class TestJsonFormat:
     def test_default_is_wire_form(self, capsys):
         main(["--schema", TXN_SCHEMA, "--count", "1", "--seed", "42"])

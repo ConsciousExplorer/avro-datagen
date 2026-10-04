@@ -80,6 +80,11 @@ for record in generate("order.avsc", count=100):
 
 # Deterministic output
 records = list(generate("order.avsc", count=10, seed=42))
+
+# Deterministic, with relative dates ("now", "-30d", "today") anchored to a
+# chosen clock instead of the 2026-01-01 default for seeded runs
+from datetime import UTC, datetime
+records = list(generate("order.avsc", count=10, seed=42, now=datetime(2026, 10, 4, tzinfo=UTC)))
 ```
 
 ## Sinks and integrations
