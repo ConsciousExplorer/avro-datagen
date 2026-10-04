@@ -1,5 +1,7 @@
 """Tests for the core generate function."""
 
+import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -9,6 +11,14 @@ from avro_datagen.generator import generate
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 TXN_SCHEMA = FIXTURES_DIR / "transaction.avsc"
 FAKER_SCHEMA = FIXTURES_DIR / "faker_fields.avsc"
+
+# 2026-10-04T00:00:00Z, written out by hand so the expectations below do not
+# depend on the code under test.
+NOW = datetime(2026, 10, 4, tzinfo=UTC)
+NOW_S = 1_791_072_000
+NOW_MS = 1_791_072_000_000
+NOW_DAYS = 20_730
+THIRTY_DAYS_MS = 30 * 86_400 * 1000
 
 
 class TestGenerate:
@@ -165,3 +175,89 @@ class TestTransactionSchema:
         thirty_days_ms = 30 * 86400 * 1000
         for record in records:
             assert anchor_ms - thirty_days_ms <= record["timestamp"] <= anchor_ms + 1000
+
+
+def _write_schema(tmp_path: Path, fields: list[dict]) -> Path:
+    path = tmp_path / "schema.avsc"
+    path.write_text(json.dumps({"type": "record", "name": "R", "fields": fields}))
+    return path
+
+
+class TestNowAnchor:
+    """An explicit `now` anchors every relative bound, seeded or not."""
+
+    def test_seeded_timestamps_follow_now(self):
+        for record in generate(TXN_SCHEMA, count=200, seed=1, now=NOW):
+            assert NOW_MS - THIRTY_DAYS_MS <= record["timestamp"] <= NOW_MS
+
+    def test_epoch_seconds_are_accepted(self):
+        for record in generate(TXN_SCHEMA, count=200, seed=1, now=float(NOW_S)):
+            assert NOW_MS - THIRTY_DAYS_MS <= record["timestamp"] <= NOW_MS
+
+    def test_unseeded_run_follows_now_instead_of_the_real_clock(self):
+        for record in generate(TXN_SCHEMA, count=200, now=NOW):
+            assert NOW_MS - THIRTY_DAYS_MS <= record["timestamp"] <= NOW_MS
+
+    def test_same_seed_and_now_are_reproducible(self):
+        first = list(generate(TXN_SCHEMA, count=20, seed=7, now=NOW))
+        second = list(generate(TXN_SCHEMA, count=20, seed=7, now=NOW))
+        assert first == second
+
+    def test_unhinted_timestamp_defaults_to_now(self, tmp_path):
+        schema = _write_schema(
+            tmp_path, [{"name": "ts", "type": {"type": "long", "logicalType": "timestamp-millis"}}]
+        )
+        [record] = generate(schema, count=1, seed=1, now=NOW)
+        assert record["ts"] == NOW_MS
+
+    def test_date_today_follows_now(self, tmp_path):
+        schema = _write_schema(
+            tmp_path,
+            [
+                {
+                    "name": "d",
+                    "type": {"type": "int", "logicalType": "date"},
+                    "arg.properties": {"range": {"min": "today", "max": "today"}},
+                }
+            ],
+        )
+        [record] = generate(schema, count=1, seed=1, now=NOW)
+        assert record["d"] == NOW_DAYS
+
+    def test_date_day_offsets_follow_now(self, tmp_path):
+        schema = _write_schema(
+            tmp_path,
+            [
+                {
+                    "name": "d",
+                    "type": {"type": "int", "logicalType": "date"},
+                    "arg.properties": {"range": {"min": "-30d", "max": "+7d"}},
+                }
+            ],
+        )
+        days = [r["d"] for r in generate(schema, count=200, seed=1, now=NOW)]
+        assert all(NOW_DAYS - 30 <= d <= NOW_DAYS + 7 for d in days)
+
+    def test_naive_datetime_is_rejected(self):
+        with pytest.raises(ValueError, match="timezone"):
+            list(generate(TXN_SCHEMA, count=1, seed=1, now=datetime(2026, 10, 4)))
+
+    def test_non_temporal_seeded_pool_ignores_now(self, tmp_path):
+        """Seeded pool members come from the pool seed alone, not the clock."""
+        schema = _write_schema(
+            tmp_path,
+            [
+                {
+                    "name": "customerId",
+                    "type": {"type": "string", "logicalType": "uuid"},
+                    "arg.properties": {"pool": {"size": 5, "seed": "customers-v1"}},
+                }
+            ],
+        )
+        early = {r["customerId"] for r in generate(schema, count=200, seed=1, now=NOW)}
+        late = {
+            r["customerId"]
+            for r in generate(schema, count=200, seed=1, now=datetime(2030, 6, 1, tzinfo=UTC))
+        }
+        assert len(early) == 5
+        assert early == late

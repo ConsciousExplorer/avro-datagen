@@ -145,3 +145,6 @@ When a field's type is a record:
 | `_faker.seed_instance(seed)` — Faker output controlled | Faker random each run |
 | `now_ts` pinned to 2026-01-01 | `now_ts` = current time |
 | Fully deterministic output | Different every time |
+
+An explicit `now` (`--now` on the CLI) overrides `now_ts` in both columns, so
+a seeded run is reproducible for a given `(seed, now)` pair.

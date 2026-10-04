@@ -208,8 +208,8 @@ share a universe by pointing at the same string. Rotate the string
   identical), and `date` members are anchored to the current day. The
   cross-process membership guarantee therefore covers `uuid`, times,
   decimals, and primitives; for date/timestamp pools it only holds between
-  runs that pin the clock the same way (the CLI does this when `--seed` is
-  given).
+  runs that pin the clock the same way (with the same `--now`, or with
+  `--seed` and no `--now`, which pins it to 2026-01-01).
 - **One pool is cached per distinct `per` value.** Keep `per` pointed at a
   bounded-cardinality field (itself pooled, `options`, etc.) -- keying on a
   high-cardinality field grows memory without ever reusing a pool.
