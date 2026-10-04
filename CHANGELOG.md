@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0](https://github.com/ConsciousExplorer/avro-datagen/compare/v0.5.0...v0.6.0) (2026-10-04)
+
+
+### Added
+
+* **generator:** anchor the clock with an explicit now ([#35](https://github.com/ConsciousExplorer/avro-datagen/issues/35)) ([e13ea1b](https://github.com/ConsciousExplorer/avro-datagen/commit/e13ea1bf9582b421350b2af018b4d79d200c4715))
+
 ## [0.5.0](https://github.com/ConsciousExplorer/avro-datagen/compare/v0.4.2...v0.5.0) (2026-08-23)
 
 
